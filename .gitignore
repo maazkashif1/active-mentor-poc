@@ -1,0 +1,26 @@
+.DS_Store
+*.log
+
+# env files — set these in Render / Vercel dashboards
+.env
+.env.local
+.env.production
+
+# deps
+node_modules/
+
+# iOS
+ActiveMentorPhysio/ios/Pods/
+ActiveMentorPhysio/ios/build/
+ActiveMentorPhysio/ios/*.xcworkspace/xcuserdata/
+
+# Android
+ActiveMentorPhysio/android/.gradle/
+ActiveMentorPhysio/android/app/build/
+ActiveMentorPhysio/android/build/
+
+# Next.js
+physiologist-portal/.next/
+
+# misc
+*.orig
