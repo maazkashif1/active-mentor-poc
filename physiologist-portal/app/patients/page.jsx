@@ -168,10 +168,16 @@ function PatientProfile({ patient }) {
             {patient.email ? <p className="session-sub">{patient.email}</p> : null}
           </div>
         </div>
-        <Link href={historyHref} className="btn-ghost">
-          All appointments
-          <ChevronRightIcon size={16} />
-        </Link>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Link href={`/messages?patient=${patient._id}`} className="btn-ghost">
+            Message
+            <ChevronRightIcon size={16} />
+          </Link>
+          <Link href={historyHref} className="btn-ghost">
+            All appointments
+            <ChevronRightIcon size={16} />
+          </Link>
+        </div>
       </div>
 
       <div className="stat-band">

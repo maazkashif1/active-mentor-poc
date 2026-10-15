@@ -1,9 +1,8 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_BASE } from './urls';
 
-const BASE_URL = 'https://active-mentor-poc.onrender.com/api';
-
-const api = axios.create({ baseURL: BASE_URL, timeout: 15000 });
+const api = axios.create({ baseURL: API_BASE, timeout: 15000 });
 
 api.interceptors.request.use(async config => {
   const token = await AsyncStorage.getItem('token');

@@ -11,6 +11,7 @@ const webhookRoutes = require('./api/webhookRoutes');
 const otpRoutes = require('./api/otpRoutes');
 const patientRoutes = require('./api/patientRoutes');
 const uploadRoutes = require('./api/uploadRoutes');
+const chatRoutes = require('./api/chatRoutes');
 
 const app = express();
 
@@ -33,5 +34,6 @@ app.use('/api/webhook', webhookRoutes);
 app.use('/api/auth', otpRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/chat', chatRoutes);
 
 module.exports = app;

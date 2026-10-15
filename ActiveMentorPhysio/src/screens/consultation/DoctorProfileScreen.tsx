@@ -17,7 +17,9 @@ import { BlurView } from '@react-native-community/blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSlots, bookSession } from '../../services/sessionService';
+import { physioPhotoSource } from '../../utils/physioAvatar';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -171,24 +173,32 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
   const specialty = physio?.specialty || physio?.specialization || 'Physiotherapist';
   const years = physio?.yearsExperience ?? 8;
   const rating = physio?.rating ?? 4.6;
-  const photoSource = physio?.photo
-    ? { uri: physio.photo }
-    : physio?.localPhoto
-      ? physio.localPhoto
-      : IMG.hero;
+  const photoSource = physioPhotoSource(physio);
 
   const confirmBooking = async () => {
     if (!selectedSlot) return Alert.alert('Select a time slot');
     if (!physio?._id) return Alert.alert('This profile is unavailable for booking');
+
+    // After time is picked → always run care intake forms, then book
     const note = complaints.trim() || 'Initial assessment';
     setBooking(true);
     try {
-      await bookSession(physio._id, selectedSlot.date, selectedSlot.time, note);
-      Alert.alert('Booked!', 'Your session has been scheduled.', [
-        { text: 'OK', onPress: () => navigation.navigate('ConsultHistory') },
-      ]);
+      await AsyncStorage.setItem(
+        'pendingBooking',
+        JSON.stringify({
+          physioId: physio._id,
+          physioName: physio.name,
+          date: selectedSlot.date,
+          time: selectedSlot.time,
+          complaints: note,
+        }),
+      );
+      navigation.navigate('CareArea' as any, {
+        returnTo: 'ConsultHistory',
+        fromBooking: true,
+      });
     } catch (e: any) {
-      Alert.alert('Booking failed', e?.response?.data?.message || e.message);
+      Alert.alert('Something went wrong', e?.message || 'Please try again');
     } finally {
       setBooking(false);
     }
@@ -264,11 +274,25 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
                 <Text style={s.detailsText}>Details</Text>
               </TouchableOpacity>
               <View style={s.actionIcons}>
-                {[IMG.call, IMG.message, IMG.video].map((icon, i) => (
-                  <TouchableOpacity key={i} style={s.iconCircle} activeOpacity={0.85}>
-                    <Image source={icon} style={s.actionIcon} resizeMode="contain" />
-                  </TouchableOpacity>
-                ))}
+                <TouchableOpacity style={s.iconCircle} activeOpacity={0.85}>
+                  <Image source={IMG.call} style={s.actionIcon} resizeMode="contain" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={s.iconCircle}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    if (!physio?._id) return;
+                    navigation.navigate('Chat' as any, {
+                      physiologistId: String(physio._id),
+                      physioName: displayName(physio),
+                    });
+                  }}
+                >
+                  <Image source={IMG.message} style={s.actionIcon} resizeMode="contain" />
+                </TouchableOpacity>
+                <TouchableOpacity style={s.iconCircle} activeOpacity={0.85}>
+                  <Image source={IMG.video} style={s.actionIcon} resizeMode="contain" />
+                </TouchableOpacity>
               </View>
             </View>
           </View>
@@ -434,7 +458,9 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
             {booking ? (
               <ActivityIndicator color={INK} />
             ) : (
-              <Text style={s.continueText}>Continue</Text>
+              <Text style={s.continueText}>
+                {selectedSlot ? 'Continue to booking form' : 'Continue'}
+              </Text>
             )}
           </TouchableOpacity>
         </View>

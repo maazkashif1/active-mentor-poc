@@ -1,157 +1,286 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, SafeAreaView,
-  ScrollView, ImageBackground,
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  ImageBackground,
+  StatusBar,
+  Platform,
+  Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import OnboardingHeader from '../../components/OnboardingHeader';
 
 type Props = NativeStackScreenProps<any, any>;
 
-const AREAS = ['Knee', 'Shoulder', 'Elbow', 'Joints'];
+const SW = Dimensions.get('window').width;
+const SCALE = SW / 390;
+const H_PAD = 24 * SCALE;
+const ACCENT = '#e0e7ef';
+const INK = '#333333';
+
+const font = (weight: 'Light' | 'Regular' | 'Medium' | 'SemiBold' | 'Bold') =>
+  Platform.select({
+    ios: `Poppins-${weight}`,
+    android: `Poppins-${weight}`,
+    default: undefined,
+  });
+
+const AREAS = ['Knee', 'Shoulder', 'Elbow', 'Joints'] as const;
 const SIDES = ['Left', 'Right', 'Both'];
-const BILATERAL_AREAS = new Set(['Knee', 'Shoulder', 'Elbow']);
+const BILATERAL = new Set(['Knee', 'Shoulder', 'Elbow']);
 
-const AREA_IMAGES: Record<string, ReturnType<typeof require>> = {
-  Knee:     require('../../assets/care_knee.jpg'),
-  Shoulder: require('../../assets/care_shoulder.jpg'),
-  Elbow:    require('../../assets/care_elbow.jpg'),
-  Joints:   require('../../assets/care_shoulder.jpg'),
+const AREA_IMAGES: Record<string, any> = {
+  Knee: require('../../assets/images/figma/care_knee.png'),
+  Shoulder: require('../../assets/images/figma/care_shoulder.png'),
+  Elbow: require('../../assets/images/figma/care_elbow.png'),
+  Joints: require('../../assets/images/figma/care_mobility.png'),
 };
 
-const AREA_LABELS: Record<string, { title: string; sub: string }> = {
-  Knee: { title: 'Knee care', sub: 'Guided recovery and strength' },
-  Shoulder: { title: 'Shoulder care', sub: 'Mobility and rehabilitation' },
-  Elbow: { title: 'Elbow care', sub: 'Rehabilitation and recovery' },
-  Joints: { title: 'Joint mobility', sub: 'Guided joint exercises' },
-};
-
-const SIDE_QUESTION: Record<string, string> = {
-  Knee: 'Which knee?',
-  Shoulder: 'Which shoulder?',
-  Elbow: 'Which elbow?',
-  Joints: 'Which side?',
+const AREA_COPY: Record<string, { title: string; sub: string; sideQ: string }> = {
+  Knee: {
+    title: 'Knee care',
+    sub: 'Strength, stability, and guided recovery',
+    sideQ: 'Which knee?',
+  },
+  Shoulder: {
+    title: 'Shoulder care',
+    sub: 'Mobility and rehab for everyday reach',
+    sideQ: 'Which shoulder?',
+  },
+  Elbow: {
+    title: 'Elbow care',
+    sub: 'Ease pain and restore range',
+    sideQ: 'Which elbow?',
+  },
+  Joints: {
+    title: 'Joint mobility',
+    sub: 'Gentle movement across the body',
+    sideQ: 'Which side?',
+  },
 };
 
 export default function CareAreaScreen({ navigation, route }: Props) {
-  const [area, setArea] = useState('Knee');
+  const insets = useSafeAreaInsets();
+  const [area, setArea] = useState<(typeof AREAS)[number]>('Knee');
   const [side, setSide] = useState('');
   const returnTo = (route.params as any)?.returnTo;
+  const fromBooking = !!(route.params as any)?.fromBooking;
 
-  const needsSide = BILATERAL_AREAS.has(area);
+  const needsSide = BILATERAL.has(area);
   const canContinue = !needsSide || side !== '';
-
-  const handleContinue = () => {
-    navigation.navigate('KneeIntake', { area, side: needsSide ? side : '', returnTo });
-  };
-
-  const label = AREA_LABELS[area];
-  const image = AREA_IMAGES[area];
+  const copy = AREA_COPY[area];
 
   return (
-    <SafeAreaView style={s.safe}>
-      <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
+    <View style={s.root}>
+      <StatusBar barStyle="dark-content" />
+      <ScrollView
+        contentContainerStyle={[s.scrollContent, { paddingBottom: insets.bottom + 32 }]}
+        showsVerticalScrollIndicator={false}
+      >
         <OnboardingHeader
-          label="Now, your care"
-          title="What would you like help with?"
-          subtitle="Choose the area that needs attention. We'll keep this quick and simple."
+          label={fromBooking ? 'Before we confirm' : 'Your care'}
+          title={fromBooking ? 'What brings you in today?' : 'Where does it need help?'}
+          subtitle={
+            fromBooking
+              ? 'A short form so your physiotherapist knows what to focus on this visit.'
+              : "Pick an area — we'll keep the next questions quick."
+          }
           onBack={() => navigation.goBack()}
-          progress={{ current: 2, total: 5 }}
+          progress={{ current: 1, total: 3 }}
         />
-        <View style={s.areaGrid}>
-          {AREAS.map(a => (
-            <TouchableOpacity
-              key={a}
-              style={[s.areaBtn, area === a && s.areaBtnActive]}
-              onPress={() => { setArea(a); setSide(''); }}
-            >
-              <Text style={[s.areaBtnText, area === a && s.areaBtnTextActive]}>{a}</Text>
-            </TouchableOpacity>
-          ))}
+
+        <View style={s.chipRow}>
+          {AREAS.map(a => {
+            const on = area === a;
+            return (
+              <TouchableOpacity
+                key={a}
+                style={[s.chip, on && s.chipOn]}
+                onPress={() => {
+                  setArea(a);
+                  setSide('');
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={[s.chipText, on && s.chipTextOn]}>{a}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-        <View style={s.imageCard}>
-          <ImageBackground source={image} style={s.image} resizeMode="cover" imageStyle={s.imageBorderRadius}>
-            <View style={s.imageOverlay} />
-            <View style={s.imageLabel}>
-              <Text style={s.imageLabelTitle}>{label.title}</Text>
-              <Text style={s.imageLabelSub}>{label.sub}</Text>
+
+        <View style={s.heroCard}>
+          <ImageBackground
+            source={AREA_IMAGES[area]}
+            style={s.heroImg}
+            resizeMode="cover"
+            imageStyle={s.heroRadius}
+          >
+            <View style={s.heroDim} />
+            <View style={s.heroCopy}>
+              <Text style={s.heroTitle}>{copy.title}</Text>
+              <Text style={s.heroSub}>{copy.sub}</Text>
             </View>
-            {needsSide && (
-              <View style={s.sideSection}>
-                <Text style={s.sideQuestion}>{SIDE_QUESTION[area]}</Text>
+
+            {needsSide ? (
+              <View style={s.sideBlock}>
+                <Text style={s.sideQ}>{copy.sideQ}</Text>
                 <View style={s.sideRow}>
-                  {SIDES.map(sv => (
-                    <TouchableOpacity
-                      key={sv}
-                      style={[s.sideBtn, side === sv && s.sideBtnActive]}
-                      onPress={() => setSide(sv)}
-                    >
-                      <Text style={[s.sideBtnText, side === sv && s.sideBtnTextActive]}>{sv}</Text>
-                    </TouchableOpacity>
-                  ))}
+                  {SIDES.map(sv => {
+                    const on = side === sv;
+                    return (
+                      <TouchableOpacity
+                        key={sv}
+                        style={[s.sideBtn, on && s.sideBtnOn]}
+                        onPress={() => setSide(sv)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={[s.sideText, on && s.sideTextOn]}>{sv}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
-            )}
+            ) : null}
           </ImageBackground>
         </View>
-        <View style={s.btnRow}>
-          <TouchableOpacity
-            style={[s.btn, !canContinue && s.btnDisabled]}
-            onPress={handleContinue}
-            disabled={!canContinue}
-          >
-            <Text style={s.btnText}>Continue</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={s.footer}>More care areas are coming soon</Text>
-        <View style={{ height: 40 }} />
+
+        <TouchableOpacity
+          style={[s.cta, !canContinue && s.ctaDisabled]}
+          onPress={() =>
+            navigation.navigate('KneeIntake', {
+              area,
+              side: needsSide ? side : '',
+              returnTo,
+              fromBooking,
+            })
+          }
+          disabled={!canContinue}
+          activeOpacity={0.85}
+        >
+          <Text style={s.ctaText}>Continue</Text>
+        </TouchableOpacity>
+
+        <Text style={s.footer}>More care areas coming soon</Text>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
-  scroll: { flex: 1, backgroundColor: '#fff' },
-  scrollContent: { paddingBottom: 40 },
-  areaGrid: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    gap: 10, paddingHorizontal: 23, marginTop: 35,
+  root: { flex: 1, backgroundColor: '#fff' },
+  scrollContent: {},
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8 * SCALE,
+    paddingHorizontal: H_PAD,
+    marginTop: 28 * SCALE,
   },
-  areaBtn: {
-    borderWidth: 1, borderColor: '#333', borderRadius: 11,
-    paddingHorizontal: 20, paddingVertical: 14, minWidth: 80,
-    alignItems: 'center',
+  chip: {
+    borderRadius: 20,
+    paddingHorizontal: 16 * SCALE,
+    paddingVertical: 10 * SCALE,
+    backgroundColor: '#f3f5f8',
   },
-  areaBtnActive: { backgroundColor: '#333' },
-  areaBtnText: { fontSize: 15, color: '#333' },
-  areaBtnTextActive: { color: '#fff' },
-  imageCard: { marginHorizontal: 23, marginTop: 30 },
-  image: { height: 389, justifyContent: 'flex-end' },
-  imageBorderRadius: { borderRadius: 20 },
-  imageOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 20 },
-  imageLabel: { alignItems: 'center', marginBottom: 60 },
-  imageLabelTitle: { fontSize: 16, color: '#fff', fontWeight: '400' },
-  imageLabelSub: { fontSize: 12, color: '#fff', textAlign: 'center' },
-  sideSection: { paddingHorizontal: 21, paddingBottom: 20 },
-  sideQuestion: { fontSize: 12, color: '#fff', fontWeight: '500', marginBottom: 10 },
-  sideRow: { flexDirection: 'row', gap: 8 },
+  chipOn: { backgroundColor: ACCENT },
+  chipText: {
+    fontFamily: font('Light'),
+    fontSize: 14 * SCALE,
+    color: 'rgba(51,51,51,0.55)',
+  },
+  chipTextOn: {
+    fontFamily: font('Medium'),
+    fontWeight: '500',
+    color: INK,
+  },
+  heroCard: {
+    marginHorizontal: H_PAD,
+    marginTop: 20 * SCALE,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  heroImg: {
+    height: 360 * SCALE,
+    justifyContent: 'flex-end',
+  },
+  heroRadius: { borderRadius: 20 },
+  heroDim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.22)',
+  },
+  heroCopy: {
+    paddingHorizontal: 20 * SCALE,
+    paddingBottom: 18 * SCALE,
+    gap: 4 * SCALE,
+  },
+  heroTitle: {
+    fontFamily: font('Medium'),
+    fontSize: 20 * SCALE,
+    fontWeight: '500',
+    color: '#fff',
+  },
+  heroSub: {
+    fontFamily: font('Light'),
+    fontSize: 13 * SCALE,
+    color: 'rgba(255,255,255,0.85)',
+  },
+  sideBlock: {
+    paddingHorizontal: 16 * SCALE,
+    paddingBottom: 16 * SCALE,
+    gap: 10 * SCALE,
+  },
+  sideQ: {
+    fontFamily: font('Medium'),
+    fontSize: 12 * SCALE,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.85)',
+    letterSpacing: 0.3,
+  },
+  sideRow: { flexDirection: 'row', gap: 8 * SCALE },
   sideBtn: {
-    flex: 1, height: 46, borderRadius: 10,
-    backgroundColor: 'rgba(51,51,51,0.2)',
-    alignItems: 'center', justifyContent: 'center',
+    flex: 1,
+    height: 44 * SCALE,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sideBtnActive: { backgroundColor: '#fff' },
-  sideBtnText: { fontSize: 14, color: '#fff' },
-  sideBtnTextActive: { color: '#333' },
-  btnRow: { paddingHorizontal: 23, marginTop: 30 },
-  btn: {
-    backgroundColor: '#333', borderRadius: 17, height: 47,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#333', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3, shadowRadius: 15, elevation: 6,
+  sideBtnOn: { backgroundColor: '#fff' },
+  sideText: {
+    fontFamily: font('Light'),
+    fontSize: 14 * SCALE,
+    color: '#fff',
   },
-  btnDisabled: { opacity: 0.4 },
-  btnText: { color: '#fff', fontSize: 14, fontWeight: '500' },
-  footer: { fontSize: 12, color: '#333', textAlign: 'center', marginTop: 20 },
+  sideTextOn: {
+    fontFamily: font('Medium'),
+    fontWeight: '500',
+    color: INK,
+  },
+  cta: {
+    marginHorizontal: H_PAD,
+    marginTop: 24 * SCALE,
+    height: 50 * SCALE,
+    borderRadius: 20,
+    backgroundColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ctaDisabled: { opacity: 0.4 },
+  ctaText: {
+    fontFamily: font('Medium'),
+    fontSize: 15 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
+  footer: {
+    fontFamily: font('Light'),
+    fontSize: 12 * SCALE,
+    color: 'rgba(51,51,51,0.4)',
+    textAlign: 'center',
+    marginTop: 16 * SCALE,
+  },
 });

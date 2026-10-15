@@ -1,5 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  StatusBar,
+  Platform,
+  Dimensions,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { submitResult, uploadVideoToR2 } from '../../services/prescriptionService';
@@ -11,6 +20,17 @@ import {
 } from '../../pose/poseMath';
 
 const DEBUG_POSE = __DEV__;
+const SW = Dimensions.get('window').width;
+const SCALE = SW / 390;
+const ACCENT = '#e0e7ef';
+const INK = '#333333';
+
+const font = (weight: 'Light' | 'Regular' | 'Medium' | 'SemiBold' | 'Bold') =>
+  Platform.select({
+    ios: `Poppins-${weight}`,
+    android: `Poppins-${weight}`,
+    default: undefined,
+  });
 
 // ── Calibration ───────────────────────────────────────────────────────────────
 // 1.5 s measurement of resting arm angle. Timer fires via setTimeout (not frame
@@ -36,6 +56,7 @@ const SIDES: { key: Side; label: string }[] = [
 const ANGLE_EMA = 0.35; // second smoothing pass for display (first pass is in MultiPoseCamera)
 
 export default function ExerciseScreen({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
   const { exercise, prescription } = route.params as { exercise: any; prescription?: any };
 
   const def = EXERCISES[exercise?.id] ?? EXERCISES.hand_raise;
@@ -318,7 +339,8 @@ export default function ExerciseScreen({ navigation, route }: Props) {
   // Idle screen — no camera
   if (!active && !calibrating && !calibFailed) {
     return (
-      <View style={s.center}>
+      <View style={[s.center, { paddingTop: insets.top, paddingBottom: insets.bottom + 24 }]}>
+        <StatusBar barStyle="dark-content" />
         <Text style={s.exTitle}>{exercise.name}</Text>
         <Text style={s.detail}>
           {prescription ? `Target: ${prescription.targetReps} reps · ` : ''}
@@ -334,12 +356,14 @@ export default function ExerciseScreen({ navigation, route }: Props) {
             <TouchableOpacity
               key={opt.key}
               style={[s.sideBtn, side === opt.key && s.sideBtnOn]}
-              onPress={() => setSide(opt.key)}>
+              onPress={() => setSide(opt.key)}
+              activeOpacity={0.85}
+            >
               <Text style={[s.sideBtnText, side === opt.key && s.sideBtnTextOn]}>{opt.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
-        <TouchableOpacity style={s.btn} onPress={start}>
+        <TouchableOpacity style={s.btn} onPress={start} activeOpacity={0.85}>
           <Text style={s.btnText}>Start</Text>
         </TouchableOpacity>
       </View>
@@ -354,6 +378,8 @@ export default function ExerciseScreen({ navigation, route }: Props) {
 
   return (
     <View style={s.container}>
+      <StatusBar barStyle={calibFailed ? 'dark-content' : 'light-content'} />
+      {/* Stay mounted on fail so Retry / Use default can resume recording; opaque sheet covers camera status text */}
       <MultiPoseCamera
         ref={cameraRef}
         def={def}
@@ -368,30 +394,33 @@ export default function ExerciseScreen({ navigation, route }: Props) {
       {/* ── Calibration measuring overlay ── */}
       {calibrating && (
         <View style={s.calibOverlay} pointerEvents="none">
-          <Text style={s.calibTitle}>Let your arm hang relaxed by your side</Text>
-          <Text style={s.calibAngle}>{angle != null ? `${angle}°` : '—'}</Text>
-          <View style={s.calibBar}>
-            <View style={[s.calibFill, { width: `${Math.round((calibProgress / CALIBRATION_MS) * 100)}%` }]} />
+          <View style={s.calibCard}>
+            <Text style={s.calibTitle}>Let your arm hang relaxed by your side</Text>
+            <Text style={s.calibAngle}>{angle != null ? `${angle}°` : '—'}</Text>
+            <View style={s.calibBar}>
+              <View style={[s.calibFill, { width: `${Math.round((calibProgress / CALIBRATION_MS) * 100)}%` }]} />
+            </View>
+            <Text style={s.calibHint}>Measuring resting angle…</Text>
           </View>
-          <Text style={s.calibHint}>Measuring resting angle…</Text>
         </View>
       )}
 
-      {/* ── Calibration retry overlay ── */}
+      {/* ── Calibration retry — solid light sheet (no camera text underneath) ── */}
       {calibFailed && (
-        <View style={s.calibRetryOverlay}>
+        <View style={[s.calibRetryOverlay, { paddingTop: insets.top, paddingBottom: insets.bottom + 24 }]}>
+          <Text style={s.calibRetryEyebrow}>Calibration</Text>
           <Text style={s.calibRetryTitle}>Couldn't measure resting angle</Text>
           <Text style={s.calibRetryAngle}>{angle != null ? `${angle}°` : '—'}</Text>
           <Text style={s.calibRetryHint}>
             Arm may be moving or out of frame. Let it hang fully relaxed.
           </Text>
           {retriesLeft > 0 && (
-            <TouchableOpacity style={[s.btn, s.btnSmall]} onPress={retryCalibration}>
+            <TouchableOpacity style={[s.btn, s.btnSmall]} onPress={retryCalibration} activeOpacity={0.85}>
               <Text style={s.btnText}>Retry ({retriesLeft} left)</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={[s.btnOutline, s.btnSmall]} onPress={useDefaultRest}>
-            <Text style={s.btnOutlineText}>Use default ({prescriptionRest}°)</Text>
+          <TouchableOpacity style={[s.btnQuiet, s.btnSmall]} onPress={useDefaultRest} activeOpacity={0.85}>
+            <Text style={s.btnQuietText}>Use default ({prescriptionRest}°)</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -399,14 +428,16 @@ export default function ExerciseScreen({ navigation, route }: Props) {
       {/* ── Exercise overlays (active only) ── */}
       {active && (
         <>
-          <View style={s.overlay} pointerEvents="none">
-            <Text style={[s.repCount, done && s.repCountDone]}>{reps}</Text>
-            <Text style={s.repLabel}>reps{target != null ? ` / ${target}` : ''}</Text>
-            <Text style={s.breakdown}>{independent} independent · {assistedReps} assisted</Text>
-            <Text style={s.angleDisplay}>{angle != null ? `${angle}°` : 'tap yourself to lock in'}</Text>
-            {adaptedTarget != null && (
-              <Text style={s.adaptedBadge}>Adapted target: {Math.round(adaptedTarget)}°</Text>
-            )}
+          <View style={[s.overlay, { top: insets.top + 16 }]} pointerEvents="none">
+            <View style={s.hudCard}>
+              <Text style={[s.repCount, done && s.repCountDone]}>{reps}</Text>
+              <Text style={s.repLabel}>reps{target != null ? ` / ${target}` : ''}</Text>
+              <Text style={s.breakdown}>{independent} independent · {assistedReps} assisted</Text>
+              <Text style={s.angleDisplay}>{angle != null ? `${angle}°` : 'tap yourself to lock in'}</Text>
+              {adaptedTarget != null && (
+                <Text style={s.adaptedBadge}>Adapted target: {Math.round(adaptedTarget)}°</Text>
+              )}
+            </View>
           </View>
 
           {DEBUG_POSE && (
@@ -427,8 +458,8 @@ export default function ExerciseScreen({ navigation, route }: Props) {
             </View>
           )}
 
-          <View style={s.controls}>
-            <TouchableOpacity style={s.doneBtn} onPress={finish} disabled={submitting}>
+          <View style={[s.controls, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+            <TouchableOpacity style={s.doneBtn} onPress={finish} disabled={submitting} activeOpacity={0.85}>
               <Text style={s.doneBtnText}>{submitting ? 'Saving…' : 'Done'}</Text>
             </TouchableOpacity>
           </View>
@@ -439,60 +470,262 @@ export default function ExerciseScreen({ navigation, route }: Props) {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  center: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  exTitle: { color: '#fff', fontSize: 26, fontWeight: 'bold', marginBottom: 8 },
-  detail: { color: '#888', fontSize: 14, marginBottom: 28, textAlign: 'center' },
-  sideLabel: { color: '#aaa', fontSize: 13, marginBottom: 10 },
-  sideRow: { flexDirection: 'row', gap: 10, marginBottom: 32 },
-  sideBtn: { paddingVertical: 10, paddingHorizontal: 22, borderRadius: 20, borderWidth: 1, borderColor: '#444' },
-  sideBtnOn: { backgroundColor: '#EC9F05', borderColor: '#EC9F05' },
-  sideBtnText: { color: '#ccc', fontSize: 15, fontWeight: '600' },
-  sideBtnTextOn: { color: '#000' },
-  btn: { backgroundColor: '#EC9F05', borderRadius: 25, paddingVertical: 14, paddingHorizontal: 40 },
-  btnSmall: { paddingVertical: 12, paddingHorizontal: 28, marginTop: 12 },
-  btnText: { color: '#000', fontWeight: 'bold', fontSize: 16 },
-  btnOutline: { borderWidth: 1, borderColor: '#EC9F05', borderRadius: 25, paddingVertical: 14, paddingHorizontal: 40 },
-  btnOutlineText: { color: '#EC9F05', fontWeight: 'bold', fontSize: 15 },
-  // Calibration overlays
+  container: { flex: 1, backgroundColor: '#fff' },
+  center: {
+    flex: 1,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 28 * SCALE,
+  },
+  exTitle: {
+    fontFamily: font('Medium'),
+    fontSize: 28 * SCALE,
+    fontWeight: '500',
+    color: INK,
+    marginBottom: 8 * SCALE,
+  },
+  detail: {
+    fontFamily: font('Light'),
+    fontSize: 14 * SCALE,
+    lineHeight: 20 * SCALE,
+    color: 'rgba(51,51,51,0.55)',
+    marginBottom: 28 * SCALE,
+    textAlign: 'center',
+  },
+  sideLabel: {
+    fontFamily: font('Medium'),
+    fontSize: 12 * SCALE,
+    fontWeight: '500',
+    color: 'rgba(51,51,51,0.45)',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 12 * SCALE,
+  },
+  sideRow: { flexDirection: 'row', gap: 10 * SCALE, marginBottom: 32 * SCALE },
+  sideBtn: {
+    paddingVertical: 10 * SCALE,
+    paddingHorizontal: 22 * SCALE,
+    borderRadius: 20,
+    backgroundColor: '#f3f5f8',
+  },
+  sideBtnOn: { backgroundColor: ACCENT },
+  sideBtnText: {
+    fontFamily: font('Light'),
+    fontSize: 15 * SCALE,
+    color: 'rgba(51,51,51,0.55)',
+  },
+  sideBtnTextOn: {
+    fontFamily: font('Medium'),
+    fontWeight: '500',
+    color: INK,
+  },
+  btn: {
+    backgroundColor: ACCENT,
+    borderRadius: 20,
+    height: 48 * SCALE,
+    paddingHorizontal: 40 * SCALE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 200 * SCALE,
+  },
+  btnSmall: { marginTop: 12 * SCALE, width: '100%', maxWidth: 280 * SCALE },
+  btnText: {
+    fontFamily: font('Medium'),
+    fontWeight: '500',
+    fontSize: 15 * SCALE,
+    color: INK,
+  },
+  btnQuiet: {
+    borderRadius: 20,
+    height: 44 * SCALE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnQuietText: {
+    fontFamily: font('Light'),
+    fontSize: 14 * SCALE,
+    color: 'rgba(51,51,51,0.5)',
+  },
   calibOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    justifyContent: 'center', alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    paddingHorizontal: 28 * SCALE,
   },
-  calibTitle: { color: '#fff', fontSize: 19, fontWeight: '600', textAlign: 'center', paddingHorizontal: 32, marginBottom: 16 },
-  calibAngle: { color: '#EC9F05', fontSize: 52, fontWeight: 'bold', marginBottom: 20 },
-  calibBar: { width: 200, height: 6, backgroundColor: '#333', borderRadius: 3, overflow: 'hidden', marginBottom: 12 },
-  calibFill: { height: '100%', backgroundColor: '#EC9F05', borderRadius: 3 },
-  calibHint: { color: '#aaa', fontSize: 13 },
+  calibCard: {
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    paddingVertical: 28 * SCALE,
+    paddingHorizontal: 22 * SCALE,
+    alignItems: 'center',
+    gap: 8 * SCALE,
+  },
+  calibTitle: {
+    fontFamily: font('Medium'),
+    fontSize: 17 * SCALE,
+    fontWeight: '500',
+    color: INK,
+    textAlign: 'center',
+    marginBottom: 8 * SCALE,
+  },
+  calibAngle: {
+    fontFamily: font('Medium'),
+    fontSize: 48 * SCALE,
+    fontWeight: '500',
+    color: INK,
+    marginBottom: 12 * SCALE,
+  },
+  calibBar: {
+    width: 200 * SCALE,
+    height: 6,
+    backgroundColor: '#f0f2f5',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: 8 * SCALE,
+  },
+  calibFill: { height: '100%', backgroundColor: ACCENT, borderRadius: 3 },
+  calibHint: {
+    fontFamily: font('Light'),
+    fontSize: 13 * SCALE,
+    color: 'rgba(51,51,51,0.5)',
+  },
   calibRetryOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    justifyContent: 'center', alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.75)', padding: 32,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 32 * SCALE,
+    zIndex: 20,
   },
-  calibRetryTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginBottom: 12 },
-  calibRetryAngle: { color: '#EC9F05', fontSize: 40, fontWeight: 'bold', marginBottom: 8 },
-  calibRetryHint: { color: '#aaa', fontSize: 14, textAlign: 'center', marginBottom: 4 },
-  // Exercise overlays
-  overlay: { position: 'absolute', top: 54, alignSelf: 'center', alignItems: 'center' },
-  repCount: { color: '#EC9F05', fontSize: 72, fontWeight: 'bold' },
-  repCountDone: { color: '#4CAF50' },
-  repLabel: { color: '#fff', fontSize: 18 },
-  breakdown: { color: '#bbb', fontSize: 14, marginTop: 4 },
-  angleDisplay: { color: '#aaa', fontSize: 15, marginTop: 6 },
-  adaptedBadge: { color: '#EC9F05', fontSize: 12, marginTop: 4, fontStyle: 'italic' },
+  calibRetryEyebrow: {
+    fontFamily: font('Medium'),
+    fontSize: 11 * SCALE,
+    fontWeight: '500',
+    color: 'rgba(51,51,51,0.45)',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 8 * SCALE,
+  },
+  calibRetryTitle: {
+    fontFamily: font('Medium'),
+    fontSize: 22 * SCALE,
+    fontWeight: '500',
+    color: INK,
+    textAlign: 'center',
+    marginBottom: 12 * SCALE,
+  },
+  calibRetryAngle: {
+    fontFamily: font('Medium'),
+    fontSize: 40 * SCALE,
+    fontWeight: '500',
+    color: INK,
+    marginBottom: 10 * SCALE,
+  },
+  calibRetryHint: {
+    fontFamily: font('Light'),
+    fontSize: 14 * SCALE,
+    lineHeight: 21 * SCALE,
+    color: 'rgba(51,51,51,0.55)',
+    textAlign: 'center',
+    marginBottom: 8 * SCALE,
+  },
+  overlay: { position: 'absolute', alignSelf: 'center', alignItems: 'center' },
+  hudCard: {
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 18,
+    paddingVertical: 16 * SCALE,
+    paddingHorizontal: 24 * SCALE,
+    alignItems: 'center',
+    minWidth: 200 * SCALE,
+  },
+  repCount: {
+    fontFamily: font('Medium'),
+    fontSize: 56 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
+  repCountDone: { color: INK },
+  repLabel: {
+    fontFamily: font('Light'),
+    fontSize: 15 * SCALE,
+    color: 'rgba(51,51,51,0.55)',
+  },
+  breakdown: {
+    fontFamily: font('Light'),
+    fontSize: 13 * SCALE,
+    color: 'rgba(51,51,51,0.45)',
+    marginTop: 4 * SCALE,
+  },
+  angleDisplay: {
+    fontFamily: font('Light'),
+    fontSize: 14 * SCALE,
+    color: 'rgba(51,51,51,0.5)',
+    marginTop: 6 * SCALE,
+  },
+  adaptedBadge: {
+    fontFamily: font('Light'),
+    fontSize: 12 * SCALE,
+    color: 'rgba(51,51,51,0.45)',
+    marginTop: 4 * SCALE,
+  },
   debugPanel: {
-    position: 'absolute', bottom: 90, left: 12,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    borderWidth: 1, borderColor: '#EC9F05',
-    borderRadius: 8, padding: 10, minWidth: 240,
+    position: 'absolute',
+    bottom: 100 * SCALE,
+    left: 12,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: 1,
+    borderColor: ACCENT,
+    borderRadius: 12,
+    padding: 10,
+    minWidth: 240,
   },
-  debugTitle: { color: '#EC9F05', fontSize: 11, fontWeight: 'bold', letterSpacing: 1, marginBottom: 4 },
-  debugLine: { color: '#fff', fontSize: 12, lineHeight: 18 },
+  debugTitle: {
+    fontFamily: font('Medium'),
+    fontSize: 11,
+    fontWeight: '500',
+    letterSpacing: 1,
+    marginBottom: 4,
+    color: INK,
+  },
+  debugLine: {
+    fontFamily: font('Light'),
+    color: 'rgba(51,51,51,0.7)',
+    fontSize: 12,
+    lineHeight: 18,
+  },
   controls: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    flexDirection: 'row', padding: 20, backgroundColor: 'rgba(0,0,0,0.6)',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    backgroundColor: 'rgba(255,255,255,0.92)',
   },
-  doneBtn: { flex: 1, backgroundColor: '#CC2222', borderRadius: 20, padding: 16, alignItems: 'center' },
-  doneBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 18 },
+  doneBtn: {
+    flex: 1,
+    backgroundColor: ACCENT,
+    borderRadius: 20,
+    height: 52 * SCALE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  doneBtnText: {
+    fontFamily: font('Medium'),
+    fontWeight: '500',
+    fontSize: 16 * SCALE,
+    color: INK,
+  },
 });

@@ -133,3 +133,11 @@ export function UserIcon(props) {
     </Icon>
   );
 }
+
+export function MessageIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M4.5 6.5h15a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H9l-4.5 3v-3H4.5A1.5 1.5 0 0 1 3 16V8a1.5 1.5 0 0 1 1.5-1.5z" />
+    </Icon>
+  );
+}

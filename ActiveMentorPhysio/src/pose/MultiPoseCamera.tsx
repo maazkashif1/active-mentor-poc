@@ -192,7 +192,7 @@ const Live = React.forwardRef<MultiPoseCameraHandle, any>(
     onFrame(g);
     setAssistedNow(g.assisted);
     setAngles(angleList);
-    setPersons(next.map(t => ({ kps: t.kps, color: t.id === ptid ? '#EC9F05' : '#2196F3', primary: t.id === ptid })));
+    setPersons(next.map(t => ({ kps: t.kps, color: t.id === ptid ? '#333333' : '#8a9bb0', primary: t.id === ptid })));
   }, [def, side, effort, rest, floor, assistRatio, onFrame]);
 
   const frameOutput = useFrameOutput({
@@ -286,13 +286,13 @@ function Bone({ a, b, color }: { a: KPt; b: KPt; color: string }) {
 
 const Center = ({ children }: any) => <View style={s.center}>{children}</View>;
 const s = StyleSheet.create({
-  center: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  txt: { color: '#ccc', fontSize: 15, textAlign: 'center' },
+  center: { flex: 1, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  txt: { color: 'rgba(51,51,51,0.55)', fontSize: 15, textAlign: 'center' },
   dot: { position: 'absolute', width: 9, height: 9, borderRadius: 5, marginLeft: -4.5, marginTop: -4.5, borderWidth: 1, borderColor: '#fff' },
-  tag: { position: 'absolute', backgroundColor: '#EC9F05', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  tagText: { color: '#000', fontSize: 12, fontWeight: 'bold' },
-  angleTag: { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.65)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  angleText: { color: '#EC9F05', fontSize: 16, fontWeight: 'bold' },
-  assistBanner: { position: 'absolute', top: 120, alignSelf: 'center', backgroundColor: '#2196F3', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 },
-  assistText: { color: '#fff', fontSize: 15, fontWeight: 'bold', letterSpacing: 1 },
+  tag: { position: 'absolute', backgroundColor: '#e0e7ef', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  tagText: { color: '#333333', fontSize: 12, fontWeight: '600' },
+  angleTag: { position: 'absolute', backgroundColor: 'rgba(255,255,255,0.92)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  angleText: { color: '#333333', fontSize: 16, fontWeight: '600' },
+  assistBanner: { position: 'absolute', top: 120, alignSelf: 'center', backgroundColor: '#e0e7ef', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 },
+  assistText: { color: '#333333', fontSize: 15, fontWeight: '600', letterSpacing: 1 },
 });

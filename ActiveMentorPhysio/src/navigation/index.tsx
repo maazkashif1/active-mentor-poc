@@ -30,6 +30,7 @@ import ExerciseMenuScreen from '../screens/exercise/ExerciseMenuScreen';
 import ExerciseScreen from '../screens/exercise/ExerciseScreen';
 import ExerciseSummaryScreen from '../screens/exercise/ExerciseSummaryScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
+import ChatScreen from '../screens/consultation/ChatScreen';
 
 // ── Auth context ──────────────────────────────────────────────────────────────
 type AuthCtx = { signIn: (user?: any) => void; signOut: () => void };
@@ -79,6 +80,7 @@ export default function RootNavigator() {
               <Stack.Screen name="ExerciseSummary" component={ExerciseSummaryScreen}
                 options={{ gestureEnabled: false }} />
               <Stack.Screen name="Profile" component={ProfileScreen} />
+              <Stack.Screen name="Chat" component={ChatScreen} />
               <Stack.Screen name="CareArea" component={CareAreaScreen} />
               <Stack.Screen name="KneeIntake" component={KneeIntakeScreen} />
               <Stack.Screen name="SafetyCheck" component={SafetyCheckScreen} />

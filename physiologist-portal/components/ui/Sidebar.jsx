@@ -7,12 +7,14 @@ import { clearToken, getUserName } from '../../lib/api';
 import logoImg from '../../logo.png';
 import Avatar from './Avatar';
 import EcgLine from './EcgLine';
-import { CalendarIcon, ClockIcon, GridIcon, LogoutIcon, UsersIcon } from './Icons';
+import { CalendarIcon, ClockIcon, GridIcon, LogoutIcon, MessageIcon, UsersIcon } from './Icons';
+import { disconnectSocket } from '../../lib/socket';
 
 const LINKS = [
   { href: '/dashboard', label: 'Dashboard', icon: GridIcon },
   { href: '/appointments', label: 'Appointments', icon: CalendarIcon },
   { href: '/patients', label: 'Patients', icon: UsersIcon },
+  { href: '/messages', label: 'Messages', icon: MessageIcon },
   { href: '/availability', label: 'Availability', icon: ClockIcon },
 ];
 
@@ -63,6 +65,7 @@ export default function Sidebar() {
             type="button"
             className="logout-btn"
             onClick={() => {
+              disconnectSocket();
               clearToken();
               window.location.href = '/login';
             }}

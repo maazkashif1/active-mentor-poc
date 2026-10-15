@@ -27,6 +27,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
     // lazy import to avoid circular dep at module level
     const { useAppStore } = require('./appStore');
     useAppStore.getState().reset();
+    try {
+      const { disconnectSocket } = require('../services/socket');
+      disconnectSocket();
+    } catch {}
     set({ isLoggedIn: false, user: null });
   },
 }));

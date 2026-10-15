@@ -1,5 +1,14 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+  Dimensions,
+  Image,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Props = {
   label: string;
@@ -9,51 +18,104 @@ type Props = {
   progress?: { current: number; total: number };
 };
 
+const SW = Dimensions.get('window').width;
+const SCALE = SW / 390;
+const ACCENT = '#e0e7ef';
+const INK = '#333333';
+
+const font = (weight: 'Light' | 'Regular' | 'Medium' | 'SemiBold' | 'Bold') =>
+  Platform.select({
+    ios: `Poppins-${weight}`,
+    android: `Poppins-${weight}`,
+    default: undefined,
+  });
+
 export default function OnboardingHeader({ label, title, subtitle, onBack, progress }: Props) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={s.container}>
-      <TouchableOpacity style={s.back} onPress={onBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-        <Text style={s.backArrow}>←</Text>
+    <View style={[s.container, { paddingTop: Math.max(insets.top, 12) + 8 }]}>
+      <TouchableOpacity style={s.back} onPress={onBack} activeOpacity={0.85}>
+        <Image
+          source={require('../assets/images/figma/profile/icon_back.png')}
+          style={s.backIcon}
+          resizeMode="contain"
+        />
       </TouchableOpacity>
       <Text style={s.label}>{label}</Text>
       <Text style={s.title}>{title}</Text>
       <Text style={s.subtitle}>{subtitle}</Text>
-      {progress && (
+      {progress ? (
         <View style={s.progressRow}>
-          <View style={s.progressDashes}>
+          <View style={s.progressTrack}>
             {Array.from({ length: progress.total }).map((_, i) => (
-              <View key={i} style={[s.dash, i < progress.current ? s.dashFilled : s.dashEmpty]} />
+              <View
+                key={i}
+                style={[s.dash, i < progress.current ? s.dashFilled : s.dashEmpty]}
+              />
             ))}
           </View>
-          <Text style={s.progressCount}>{progress.current}/{progress.total}</Text>
+          <Text style={s.progressCount}>
+            {String(progress.current).padStart(2, '0')} / {String(progress.total).padStart(2, '0')}
+          </Text>
         </View>
-      )}
+      ) : null}
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  container: { paddingHorizontal: 23, paddingTop: 61 },
+  container: {
+    paddingHorizontal: 24 * SCALE,
+    paddingBottom: 4 * SCALE,
+  },
   back: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(51,51,51,0.15)',
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 30,
+    width: 40 * SCALE,
+    height: 40 * SCALE,
+    borderRadius: 20 * SCALE,
+    backgroundColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20 * SCALE,
   },
-  backArrow: { fontSize: 16, color: '#333', lineHeight: 20 },
+  backIcon: { width: 18 * SCALE, height: 18 * SCALE },
   label: {
-    fontSize: 13, color: 'rgba(51,51,51,0.5)',
-    letterSpacing: 0.42, textTransform: 'uppercase', marginBottom: 10,
+    fontFamily: font('Medium'),
+    fontSize: 11 * SCALE,
+    fontWeight: '500',
+    color: 'rgba(51,51,51,0.45)',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 8 * SCALE,
   },
-  title: { fontSize: 24, color: '#333', lineHeight: 30, fontWeight: '600', marginBottom: 5 },
-  subtitle: { fontSize: 13, color: '#333', lineHeight: 20 },
+  title: {
+    fontFamily: font('Medium'),
+    fontSize: 26 * SCALE,
+    fontWeight: '500',
+    color: INK,
+    lineHeight: 32 * SCALE,
+    marginBottom: 8 * SCALE,
+  },
+  subtitle: {
+    fontFamily: font('Light'),
+    fontSize: 14 * SCALE,
+    lineHeight: 21 * SCALE,
+    color: 'rgba(51,51,51,0.55)',
+  },
   progressRow: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between', marginTop: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 22 * SCALE,
   },
-  progressDashes: { flexDirection: 'row', gap: 10 },
-  dash: { width: 29, height: 2, borderRadius: 1 },
-  dashFilled: { backgroundColor: '#333' },
-  dashEmpty: { backgroundColor: 'rgba(51,51,51,0.15)' },
-  progressCount: { fontSize: 10, color: '#333', fontWeight: '600' },
+  progressTrack: { flexDirection: 'row', gap: 8 * SCALE, flex: 1, marginRight: 16 * SCALE },
+  dash: { flex: 1, height: 3, borderRadius: 2 },
+  dashFilled: { backgroundColor: INK },
+  dashEmpty: { backgroundColor: ACCENT },
+  progressCount: {
+    fontFamily: font('Medium'),
+    fontSize: 11 * SCALE,
+    fontWeight: '500',
+    color: 'rgba(51,51,51,0.45)',
+  },
 });

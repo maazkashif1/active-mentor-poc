@@ -5,12 +5,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  ImageBackground,
   Image,
   StatusBar,
   Dimensions,
   Platform,
   LogBox,
+  Modal,
+  Pressable,
 } from 'react-native';
 
 LogBox.ignoreAllLogs(true);
@@ -44,6 +45,7 @@ const IMG = {
   ahmed: require('../../assets/images/figma/physio_ahmed.png'),
   sania: require('../../assets/images/figma/physio_sania.png'),
   knee: require('../../assets/images/figma/care_knee.png'),
+  careShoulder: require('../../assets/images/figma/care_shoulder.png'),
   elbow: require('../../assets/images/figma/care_elbow.png'),
   mobility: require('../../assets/images/figma/care_mobility.png'),
   bell: require('../../assets/images/figma/icon_bell.png'),
@@ -69,21 +71,67 @@ const HERO_IMG_TOP = -HERO_H * 0.2967;
 const PLACEHOLDERS = [IMG.ahmed, IMG.sania];
 const CHIPS = ['Knee Rehab', 'Nearest', 'Available Today', 'Shoulder Expert'];
 
-const HOW_STEPS = [
+const BODY_JOINTS = [
   {
-    num: '01',
+    id: 'knee',
+    label: 'Knee',
+    filter: 'Knee Rehab',
+    tip: 'Ease swelling with short, frequent movement. Avoid deep squats until cleared.',
+    image: IMG.knee,
+  },
+  {
+    id: 'shoulder',
+    label: 'Shoulder',
+    filter: 'Shoulder Expert',
+    tip: 'Keep the elbow below shoulder height early on. Gentle pendulum swings help.',
+    image: IMG.careShoulder,
+  },
+  {
+    id: 'elbow',
+    label: 'Elbow',
+    filter: 'Elbow Care',
+    tip: 'Limit gripping and heavy lifts. Easy flexion–extension keeps your range.',
+    image: IMG.elbow,
+  },
+  {
+    id: 'mobility',
+    label: 'Mobility',
+    filter: 'Mobility Care',
+    tip: 'Ten quiet minutes of joint circles beats one hard session. Breathe with each rep.',
+    image: IMG.mobility,
+  },
+];
+
+const STORY_CHAPTERS = [
+  {
+    id: 'intake',
+    label: 'Intake',
+    title: 'Tell us where it hurts',
+    body: 'A short form so care matches this visit — knee today, shoulder next time.',
+  },
+  {
+    id: 'matched',
+    label: 'Matched',
     title: 'Find your physiotherapist',
-    body: 'Explore physiotherapists based on your needs and location.',
+    body: 'Browse specialists by need, distance, and availability.',
   },
   {
-    num: '02',
-    title: 'Book your assessment',
-    body: 'Choose a clinic, date, and time that works for you.',
+    id: 'booked',
+    label: 'Booked',
+    title: 'Confirm your assessment',
+    body: 'Pick a clinic, date, and time that works for you.',
   },
   {
-    num: '03',
+    id: 'plan',
+    label: 'Plan',
     title: 'Start your care plan',
-    body: 'Your physiotherapist creates a personalized rehabilitation plan.',
+    body: 'Daily mobility and guided exercises between sessions.',
+  },
+  {
+    id: 'progress',
+    label: 'Progress',
+    title: 'Track how you recover',
+    body: 'Prescriptions, history, and what to do next.',
   },
 ];
 
@@ -98,9 +146,141 @@ const DEMO_NEARBY = [
 ];
 
 function greetingForHour(h: number) {
+  if (h < 5) return "Hey, it's late —";
   if (h < 12) return 'Good Morning,';
   if (h < 17) return 'Good Afternoon,';
-  return 'Good Evening,';
+  if (h < 22) return 'Good Evening,';
+  return "Hey, it's late —";
+}
+
+function sessionDateKey(session: any) {
+  return String(session?.slotDate || session?.date || '').slice(0, 10);
+}
+
+function isPastSession(session: any, today = todayKey()) {
+  const d = sessionDateKey(session);
+  if (!d) return false;
+  if (session?.status === 'missed') return true;
+  return d < today;
+}
+
+function isUpcomingSession(session: any, today = todayKey()) {
+  const d = sessionDateKey(session);
+  if (!d || d < today) return false;
+  if (session?.status === 'missed') return false;
+  return true;
+}
+
+/** Next booking pill — never says “yesterday”; past slots become miss + reschedule. */
+function sessionPillState(sessions: any[]): {
+  text: string;
+  missed: boolean;
+  session: any | null;
+} {
+  const today = todayKey();
+  const upcoming = sessions.find(s => isUpcomingSession(s, today));
+  if (upcoming) {
+    const raw = sessionDateKey(upcoming);
+    const time = upcoming.slotTime || upcoming.time;
+    let dayLabel = 'Upcoming';
+    if (raw) {
+      const d = new Date(`${raw}T12:00:00`);
+      if (!Number.isNaN(d.getTime())) {
+        const startToday = new Date();
+        startToday.setHours(12, 0, 0, 0);
+        const startSession = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12);
+        const diffDays = Math.round((startSession.getTime() - startToday.getTime()) / 86400000);
+        if (diffDays === 0) dayLabel = 'Today';
+        else if (diffDays === 1) dayLabel = 'Tomorrow';
+        else {
+          dayLabel = d.toLocaleDateString(undefined, {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+          });
+        }
+      }
+    }
+    return {
+      text: time ? `Next session · ${dayLabel} ${time}` : `Next session · ${dayLabel}`,
+      missed: false,
+      session: upcoming,
+    };
+  }
+
+  const past = [...sessions]
+    .filter(s => isPastSession(s, today))
+    .sort((a, b) => sessionDateKey(b).localeCompare(sessionDateKey(a)));
+  const missed = past.find(
+    s =>
+      s.status === 'missed' ||
+      s.status === 'pending' ||
+      s.status === 'active' ||
+      !['approved', 'summarised'].includes(s.status || ''),
+  );
+
+  if (missed) {
+    return {
+      text: 'You missed your appointment · Reschedule',
+      missed: true,
+      session: missed,
+    };
+  }
+
+  return { text: 'No session booked', missed: false, session: null };
+}
+
+function dayKey(d: Date | string) {
+  const x = typeof d === 'string' ? new Date(d) : d;
+  if (Number.isNaN(x.getTime())) return '';
+  return x.toISOString().slice(0, 10);
+}
+
+function todayKey() {
+  return dayKey(new Date());
+}
+
+/** Estimate session length from target reps (camera + rest). */
+function mobilityMinutes(targetReps?: number) {
+  return Math.min(15, Math.max(8, Math.round((targetReps || 12) * 0.75)));
+}
+
+function activityDates(progress: any[]): Set<string> {
+  const dates = new Set<string>();
+  for (const p of progress || []) {
+    for (const t of p.trend || []) {
+      const k = dayKey(t.date);
+      if (k) dates.add(k);
+    }
+  }
+  return dates;
+}
+
+function computeStreak(progress: any[]): number {
+  const dates = activityDates(progress);
+  if (!dates.size) return 0;
+  const cursor = new Date();
+  cursor.setHours(12, 0, 0, 0);
+  // If nothing today, allow streak to start from yesterday
+  if (!dates.has(dayKey(cursor))) cursor.setDate(cursor.getDate() - 1);
+  let streak = 0;
+  for (let i = 0; i < 60; i++) {
+    const k = dayKey(cursor);
+    if (!dates.has(k)) break;
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
+function mobilityPillLabel(progress: any[], prescriptions: any[]): string {
+  const dates = activityDates(progress);
+  if (dates.has(todayKey())) return 'Mobility done today';
+  const primary = prescriptions[0];
+  const fromProgress = progress[0];
+  const mins = mobilityMinutes(primary?.targetReps ?? fromProgress?.targetReps);
+  if (prescriptions.length || progress.length) return `${mins} min mobility due`;
+  return `${mins} min starter mobility`;
 }
 
 function ArrowBtn({ size = 25 }: { size?: number }) {
@@ -160,42 +340,6 @@ function PhysioCard({
   );
 }
 
-function CareCard({
-  source,
-  title,
-  sub,
-  width,
-  height,
-  onPress,
-}: {
-  source: any;
-  title: string;
-  sub: string;
-  width: number;
-  height: number;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={{ width, height }}>
-      <ImageBackground
-        source={source}
-        style={{ width, height, borderRadius: 20, overflow: 'hidden', justifyContent: 'space-between' }}
-        resizeMode="cover"
-        imageStyle={{ borderRadius: 20 }}
-      >
-        <View style={s.careDim} />
-        <View style={s.careTextBlock}>
-          <Text style={s.careTitle}>{title}</Text>
-          <Text style={s.careSub}>{sub}</Text>
-        </View>
-        <View style={s.careArrowRow}>
-          <ArrowBtn />
-        </View>
-      </ImageBackground>
-    </TouchableOpacity>
-  );
-}
-
 function SectionHeader({
   titleNode,
   sub,
@@ -233,19 +377,32 @@ function SectionHeader({
 export default function NewHomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const [firstName, setFirstName] = useState('');
+  const [careArea, setCareArea] = useState('');
   const [activeTab, setActiveTab] = useState('Home');
   const [greet, setGreet] = useState(() => greetingForHour(new Date().getHours()));
+  const [bodyJoint, setBodyJoint] = useState<(typeof BODY_JOINTS)[0] | null>(null);
+  const [storyFocus, setStoryFocus] = useState<string | null>(null);
   const physios = useAppStore(s => s.physios);
+  const sessions = useAppStore(s => s.sessions);
+  const prescriptions = useAppStore(s => s.prescriptions);
+  const progress = useAppStore(s => s.progress);
   const fetchPhysios = useAppStore(s => s.fetchPhysios);
+  const fetchSessions = useAppStore(s => s.fetchSessions);
+  const fetchPrescriptions = useAppStore(s => s.fetchPrescriptions);
+  const fetchProgress = useAppStore(s => s.fetchProgress);
 
   useEffect(() => {
     AsyncStorage.getItem('userProfile').then(v => {
       if (v) {
         const p = JSON.parse(v);
         setFirstName(p.firstName || '');
+        setCareArea(p.careArea || '');
       }
     });
     if (!physios.length) fetchPhysios();
+    fetchSessions();
+    fetchPrescriptions();
+    fetchProgress();
     const tick = () => setGreet(greetingForHour(new Date().getHours()));
     tick();
     const id = setInterval(tick, 60_000);
@@ -260,6 +417,75 @@ export default function NewHomeScreen({ navigation }: Props) {
     navigation.navigate('DoctorProfile' as any, {
       physio: { ...physio, localPhoto: localPhoto || physio.localPhoto },
     });
+  };
+
+  const goToExercises = () => {
+    if (prescriptions[0]) {
+      navigation.navigate('ExerciseMenu' as any, { prescription: prescriptions[0] });
+    } else {
+      navigation.navigate('ExerciseMenu' as any);
+    }
+  };
+
+  const sessionPill = sessionPillState(sessions);
+  const upcoming = sessionPill.session && !sessionPill.missed ? sessionPill.session : null;
+  const hasCare = sessions.length > 0 || prescriptions.length > 0;
+  const streak = computeStreak(progress);
+  const mobilityDoneToday = activityDates(progress).has(todayKey());
+  const mobilityPill = mobilityPillLabel(progress, prescriptions);
+  const unreadPlans = prescriptions.filter((p: any) => {
+    const prog = progress.find((x: any) => String(x.prescriptionId) === String(p._id));
+    return !prog || !prog.totalSessions;
+  }).length;
+  const carePhysio =
+    upcoming?.physiologistId ||
+    sessions.find((s: any) => s.physiologistId)?.physiologistId ||
+    null;
+  const planDay = Math.min(
+    14,
+    Math.max(1, (streak || 0) + (careArea ? 1 : 0) + (hasCare ? 1 : 0)),
+  );
+
+  const chapterDone: Record<string, boolean> = {
+    intake: !!careArea,
+    matched: physios.length > 0 || hasCare,
+    booked: sessions.length > 0,
+    plan: prescriptions.length > 0 || mobilityDoneToday,
+    progress: progress.some((p: any) => (p.totalSessions || 0) > 0) ||
+      sessions.some((s: any) => s.status === 'approved' || s.status === 'summarised'),
+  };
+  const activeChapterId =
+    storyFocus ||
+    STORY_CHAPTERS.find(c => !chapterDone[c.id])?.id ||
+    'progress';
+  const activeChapter = STORY_CHAPTERS.find(c => c.id === activeChapterId) || STORY_CHAPTERS[0];
+
+  const runChapter = (id: string) => {
+    if (id === 'intake') navigation.navigate('CareArea' as any, { returnTo: 'NewHome' });
+    else if (id === 'matched') goToFind();
+    else if (id === 'booked') (sessions.length ? navigation.navigate('ConsultHistory' as any) : goToFind());
+    else if (id === 'plan') goToExercises();
+    else navigation.navigate('Prescriptions' as any);
+  };
+
+  const messagePhysio = () => {
+    const openChat = (physio: any) => {
+      const id = physio?._id || physio?.id;
+      if (!id) return false;
+      navigation.navigate('Chat' as any, {
+        physiologistId: String(id),
+        physioName: physio.name || 'Physiotherapist',
+      });
+      return true;
+    };
+
+    if (carePhysio && typeof carePhysio === 'object' && openChat(carePhysio)) return;
+    if (carePhysio) {
+      const fromList = physios.find((p: any) => String(p._id) === String(carePhysio));
+      if (fromList && openChat(fromList)) return;
+    }
+    if (physios[0] && openChat(physios[0])) return;
+    navigation.navigate('Booking' as any);
   };
 
   const displayName = firstName || 'Maaz';
@@ -392,7 +618,7 @@ export default function NewHomeScreen({ navigation }: Props) {
             </View>
           </View>
 
-          {/* Frame 104:647 — 342×44, 51pt below content frame */}
+          {/* Find stays the hero CTA */}
           <TouchableOpacity
             style={[s.findBtn, { top: heroCtaTop }]}
             onPress={() => goToFind()}
@@ -404,16 +630,139 @@ export default function NewHomeScreen({ navigation }: Props) {
           <LinearGradient colors={['rgba(255,255,255,0)', '#fff']} style={s.heroFade} pointerEvents="none" />
         </View>
 
-        {/* Matched */}
+        {/* A + B · Care Today brief + Find | Continue fork */}
+        <View style={s.careToday}>
+          <Text style={s.careTodayEyebrow}>Care Today</Text>
+          <Text style={s.careTodayTitle}>
+            {hasCare ? 'Your body, this morning' : 'Start your recovery'}
+          </Text>
+          <Text style={s.careTodaySub}>
+            {careArea
+              ? `${careArea} plan · Day ${planDay} of 14`
+              : hasCare
+                ? 'Exercises and sessions live here — not only booking.'
+                : 'Two paths: find a specialist, or start moving today.'}
+          </Text>
+
+          <View style={s.pillRow}>
+            <TouchableOpacity
+              style={[s.pill, sessionPill.missed ? s.pillMissed : s.pillAccent]}
+              onPress={() =>
+                sessionPill.missed
+                  ? goToFind()
+                  : sessionPill.session
+                    ? navigation.navigate('SessionDetail' as any, { session: sessionPill.session })
+                    : goToFind()
+              }
+              activeOpacity={0.85}
+            >
+              <Text style={s.pillText}>{sessionPill.text}</Text>
+            </TouchableOpacity>
+            <View style={[s.pill, mobilityDoneToday && s.pillAccent]}>
+              <Text style={s.pillText}>{mobilityPill}</Text>
+            </View>
+            {streak > 0 ? (
+              <View style={s.pill}>
+                <Text style={s.pillText}>
+                  {streak}-day streak
+                </Text>
+              </View>
+            ) : null}
+            {unreadPlans > 0 ? (
+              <View style={s.pill}>
+                <Text style={s.pillText}>
+                  {unreadPlans} new plan{unreadPlans === 1 ? '' : 's'}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          {/* B · equal half-panels */}
+          <View style={s.forkRow}>
+            <TouchableOpacity
+              style={[s.forkPanel, s.forkContinue]}
+              onPress={() =>
+                hasCare
+                  ? navigation.navigate('ConsultHistory' as any)
+                  : goToExercises()
+              }
+              activeOpacity={0.88}
+            >
+              <Text style={s.forkTag}>Continue</Text>
+              <Text style={s.forkTitle}>
+                {hasCare ? 'Your care' : 'Self-care'}
+              </Text>
+              <Text style={s.forkBody}>
+                {hasCare
+                  ? streak > 0
+                    ? `${streak}-day streak · sessions & plans`
+                    : 'Sessions, history & prescriptions'
+                  : 'Browse starter mobility'}
+              </Text>
+              <Text style={s.forkCta}>
+                {hasCare ? 'Open history →' : 'Start moving →'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[s.forkPanel, s.forkFind]}
+              onPress={() => goToFind()}
+              activeOpacity={0.88}
+            >
+              <Text style={s.forkTag}>Find</Text>
+              <Text style={s.forkTitle}>Book care</Text>
+              <Text style={s.forkBody}>
+                {hasCare
+                  ? 'Another specialist near you'
+                  : 'Match by need, distance, availability'}
+              </Text>
+              <Text style={s.forkCta}>Browse physios →</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Deeper companion links */}
+          <View style={s.companionRow}>
+            <TouchableOpacity style={s.companionChip} onPress={goToExercises} activeOpacity={0.85}>
+              <Text style={s.companionChipText}>
+                {mobilityDoneToday ? 'Review plan' : 'Do mobility'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={s.companionChip}
+              onPress={() => navigation.navigate('Prescriptions' as any)}
+              activeOpacity={0.85}
+            >
+              <Text style={s.companionChipText}>
+                {unreadPlans > 0 ? `${unreadPlans} unread plans` : 'Prescriptions'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.companionChip} onPress={messagePhysio} activeOpacity={0.85}>
+              <Text style={s.companionChipText}>Message physio</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Matched / care team */}
         <View style={s.section}>
           <SectionHeader
             titleNode={
-              <>
-                <Text style={s.titleMed}>Matched</Text>
-                <Text style={s.titleLight}> to your needs</Text>
-              </>
+              hasCare ? (
+                <>
+                  <Text style={s.titleMed}>Your </Text>
+                  <Text style={s.titleLight}>care team</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={s.titleMed}>Matched</Text>
+                  <Text style={s.titleLight}> to your needs</Text>
+                </>
+              )
             }
-            sub="Based on your selected concern and preferences."
+            sub={
+              hasCare
+                ? 'Physiotherapists linked to your recovery.'
+                : 'Based on your selected concern and preferences.'
+            }
             onSeeMore={() => goToFind('Knee Rehab')}
           />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.physioList}>
@@ -430,45 +779,31 @@ export default function NewHomeScreen({ navigation }: Props) {
           </ScrollView>
         </View>
 
-        {/* Care areas */}
+        {/* D · Body map — where it hurts → care sheet */}
         <View style={s.section}>
           <SectionHeader
             titleNode={
               <>
-                <Text style={s.titleLight}>What do you need </Text>
-                <Text style={s.titleMed}>help with?</Text>
+                <Text style={s.titleLight}>Where </Text>
+                <Text style={s.titleMed}>it hurts</Text>
               </>
             }
-            sub="Choose an area to see physiotherapists who commonly treat it."
+            sub="Tap a joint for a tip, then see specialists if you need one."
             onSeeMore={() => goToFind()}
           />
-          <View style={s.careStack}>
-            <CareCard
-              source={IMG.knee}
-              title="Knee Rehabilitation"
-              sub="Focused recovery to restore knee strength, stability, and mobility after ACL injury."
-              width={CONTENT_W}
-              height={148 * SCALE}
-              onPress={() => goToFind('Knee Rehab')}
-            />
-            <View style={s.careRow}>
-              <CareCard
-                source={IMG.elbow}
-                title="Elbow Care"
-                sub="Relieve pain and restore shoulder movement."
-                width={121 * SCALE}
-                height={158 * SCALE}
-                onPress={() => goToFind('Elbow Care')}
-              />
-              <CareCard
-                source={IMG.mobility}
-                title="Mobility Care"
-                sub="Focused recovery to restore knee strength, stability, and mobility after ACL injury."
-                width={212 * SCALE}
-                height={158 * SCALE}
-                onPress={() => goToFind('Mobility Care')}
-              />
-            </View>
+          <View style={s.bodyHotspots}>
+            {BODY_JOINTS.map(j => (
+              <TouchableOpacity
+                key={j.id}
+                style={s.bodyHotspot}
+                onPress={() => setBodyJoint(j)}
+                activeOpacity={0.85}
+              >
+                <Image source={j.image} style={s.bodyHotspotImg} resizeMode="cover" />
+                <View style={s.bodyHotspotDim} />
+                <Text style={s.bodyHotspotLabel}>{j.label}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
@@ -498,7 +833,7 @@ export default function NewHomeScreen({ navigation }: Props) {
           </ScrollView>
         </View>
 
-        {/* How we work — same soft white fade as hero → content */}
+        {/* C · Story reel — recovery chapters (replaces How We Work) */}
         <View style={s.howSection}>
           <Image source={IMG.howBg} style={s.howBgImage} resizeMode="cover" pointerEvents="none" />
           <View style={s.howOverlay} pointerEvents="none" />
@@ -512,50 +847,120 @@ export default function NewHomeScreen({ navigation }: Props) {
             <SectionHeader
               titleNode={
                 <>
-                  <Text style={s.titleLight}>How </Text>
-                  <Text style={s.titleMed}>We</Text>
-                  <Text style={s.titleLight}> work</Text>
+                  <Text style={s.titleLight}>Your </Text>
+                  <Text style={s.titleMed}>recovery</Text>
                 </>
               }
-              sub="From finding your physiotherapist to starting your recovery plan."
-              onSeeMore={() => goToFind()}
+              sub="Chapters you own — tap one to jump ahead."
+              onSeeMore={() => runChapter(activeChapter.id)}
               light
               seeMoreLower
             />
-            <View style={s.howSteps}>
-              {HOW_STEPS.map(step => (
-                <TouchableOpacity
-                  key={step.num}
-                  style={s.howCard}
-                  onPress={() => goToFind()}
-                  activeOpacity={0.85}
-                >
-                  <BlurView
-                    style={StyleSheet.absoluteFill}
-                    blurType="light"
-                    blurAmount={7}
-                    reducedTransparencyFallbackColor="rgba(51,51,51,0.15)"
-                    pointerEvents="none"
-                  />
-                  <View style={s.howCardGlassTint} pointerEvents="none" />
-                  <View style={s.howCardRow}>
-                    <View style={s.howCardLeft}>
-                      <Text style={s.howCardTitle}>{step.title}</Text>
-                      <Text style={s.howCardBody}>{step.body}</Text>
-                    </View>
-                    <View style={s.howCardRight}>
-                      <Text style={s.howCardNum}>{step.num}</Text>
-                      <View style={s.howPlus}>
-                        <Image source={IMG.plus} style={{ width: 12, height: 12 }} resizeMode="contain" />
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.storyStrip}
+            >
+              {STORY_CHAPTERS.map((ch, i) => {
+                const done = chapterDone[ch.id];
+                const active = ch.id === activeChapter.id;
+                return (
+                  <TouchableOpacity
+                    key={ch.id}
+                    style={[s.storyChip, active && s.storyChipActive, done && !active && s.storyChipDone]}
+                    onPress={() => setStoryFocus(ch.id)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[s.storyChipNum, active && s.storyChipNumActive]}>
+                      {String(i + 1).padStart(2, '0')}
+                    </Text>
+                    <Text style={[s.storyChipLabel, active && s.storyChipLabelActive]}>
+                      {ch.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={s.storyCard}
+              onPress={() => runChapter(activeChapter.id)}
+              activeOpacity={0.88}
+            >
+              <BlurView
+                style={StyleSheet.absoluteFill}
+                blurType="light"
+                blurAmount={7}
+                reducedTransparencyFallbackColor="rgba(51,51,51,0.15)"
+                pointerEvents="none"
+              />
+              <View style={s.howCardGlassTint} pointerEvents="none" />
+              <Text style={s.storyCardEyebrow}>
+                {chapterDone[activeChapter.id] ? 'Complete' : 'Up next'}
+              </Text>
+              <Text style={s.storyCardTitle}>{activeChapter.title}</Text>
+              <Text style={s.storyCardBody}>{activeChapter.body}</Text>
+              <View style={s.storyCardCta}>
+                <Text style={s.storyCardCtaText}>
+                  {activeChapter.id === 'matched' || (!hasCare && activeChapter.id === 'booked')
+                    ? 'Find a physiotherapist'
+                    : activeChapter.id === 'intake'
+                      ? 'Update intake'
+                      : activeChapter.id === 'plan'
+                        ? "Open today's plan"
+                        : activeChapter.id === 'progress'
+                          ? 'View prescriptions'
+                          : 'Open sessions'}
+                </Text>
+                <Image source={IMG.plus} style={{ width: 12, height: 12 }} resizeMode="contain" />
+              </View>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
+
+      {/* D · Care sheet for tapped joint */}
+      <Modal
+        visible={!!bodyJoint}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setBodyJoint(null)}
+      >
+        <Pressable style={s.sheetScrim} onPress={() => setBodyJoint(null)}>
+          <Pressable style={[s.sheet, { paddingBottom: Math.max(insets.bottom, 20) }]} onPress={e => e.stopPropagation()}>
+            {bodyJoint ? (
+              <>
+                <View style={s.sheetHandle} />
+                <Image source={bodyJoint.image} style={s.sheetHero} resizeMode="cover" />
+                <Text style={s.sheetTitle}>{bodyJoint.label}</Text>
+                <Text style={s.sheetTip}>{bodyJoint.tip}</Text>
+                <TouchableOpacity
+                  style={s.sheetPrimary}
+                  onPress={() => {
+                    setBodyJoint(null);
+                    navigation.navigate('ExerciseMenu' as any);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={s.sheetPrimaryText}>Try a gentle exercise</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={s.sheetSecondary}
+                  onPress={() => {
+                    const filter = bodyJoint.filter;
+                    setBodyJoint(null);
+                    goToFind(filter);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={s.sheetSecondaryText}>See specialists</Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Tab bar — Figma #e0e7ef pill */}
       <View style={[s.tabBar, { bottom: Math.max(insets.bottom, 12) }]}>
@@ -762,6 +1167,123 @@ const s = StyleSheet.create({
     height: 72 * SCALE,
   },
 
+  careToday: {
+    paddingHorizontal: H_PAD,
+    paddingTop: 36 * SCALE,
+    paddingBottom: 8 * SCALE,
+    gap: 12 * SCALE,
+    backgroundColor: '#fff',
+  },
+  careTodayEyebrow: {
+    fontFamily: font('Medium'),
+    fontSize: 11 * SCALE,
+    fontWeight: '500',
+    color: 'rgba(51,51,51,0.45)',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  careTodayTitle: {
+    fontFamily: font('Medium'),
+    fontSize: 28 * SCALE,
+    fontWeight: '500',
+    color: INK,
+    lineHeight: 34 * SCALE,
+  },
+  careTodaySub: {
+    fontFamily: font('Light'),
+    fontSize: 13 * SCALE,
+    lineHeight: 19 * SCALE,
+    color: 'rgba(51,51,51,0.55)',
+  },
+  pillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8 * SCALE,
+  },
+  pill: {
+    backgroundColor: '#f3f5f8',
+    borderRadius: 20,
+    paddingHorizontal: 12 * SCALE,
+    paddingVertical: 7 * SCALE,
+  },
+  pillAccent: {
+    backgroundColor: ACCENT,
+  },
+  pillMissed: {
+    backgroundColor: '#ebe4e4',
+  },
+  pillText: {
+    fontFamily: font('Light'),
+    fontSize: 12 * SCALE,
+    color: INK,
+  },
+  forkRow: {
+    flexDirection: 'row',
+    gap: 10 * SCALE,
+    marginTop: 4 * SCALE,
+  },
+  forkPanel: {
+    flex: 1,
+    borderRadius: 18,
+    paddingVertical: 18 * SCALE,
+    paddingHorizontal: 14 * SCALE,
+    minHeight: 168 * SCALE,
+    justifyContent: 'space-between',
+    gap: 8 * SCALE,
+  },
+  forkContinue: {
+    backgroundColor: ACCENT,
+  },
+  forkFind: {
+    backgroundColor: '#f7f8fb',
+  },
+  forkTag: {
+    fontFamily: font('Medium'),
+    fontSize: 10 * SCALE,
+    fontWeight: '500',
+    color: 'rgba(51,51,51,0.4)',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  forkTitle: {
+    fontFamily: font('Medium'),
+    fontSize: 20 * SCALE,
+    fontWeight: '500',
+    color: INK,
+    lineHeight: 24 * SCALE,
+  },
+  forkBody: {
+    fontFamily: font('Light'),
+    fontSize: 12 * SCALE,
+    lineHeight: 17 * SCALE,
+    color: 'rgba(51,51,51,0.55)',
+    flexGrow: 1,
+  },
+  forkCta: {
+    fontFamily: font('Medium'),
+    fontSize: 12 * SCALE,
+    fontWeight: '500',
+    color: INK,
+    marginTop: 4 * SCALE,
+  },
+  companionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8 * SCALE,
+    marginTop: 4 * SCALE,
+  },
+  companionChip: {
+    backgroundColor: '#f3f5f8',
+    borderRadius: 20,
+    paddingHorizontal: 12 * SCALE,
+    paddingVertical: 9 * SCALE,
+  },
+  companionChipText: {
+    fontFamily: font('Light'),
+    fontSize: 12 * SCALE,
+    color: 'rgba(51,51,51,0.6)',
+  },
+
   // First content at y=606 → 72pt after hero (534)
   section: {
     paddingHorizontal: H_PAD,
@@ -883,48 +1405,113 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  careStack: { gap: 15 * SCALE },
-  careRow: { flexDirection: 'row', gap: 10 * SCALE },
-  careDim: {
+  bodyHotspots: {
+    width: CONTENT_W,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10 * SCALE,
+  },
+  bodyHotspot: {
+    width: (CONTENT_W - 10 * SCALE) / 2,
+    height: 120 * SCALE,
+    borderRadius: 16,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  bodyHotspotImg: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    borderRadius: 20,
+    width: '100%',
+    height: '100%',
   },
-  careTextBlock: {
-    paddingTop: 23 * SCALE,
-    paddingHorizontal: 16 * SCALE,
-    gap: 12 * SCALE,
-    zIndex: 1,
+  bodyHotspotDim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.28)',
   },
-  careTitle: {
-    fontFamily: font('Light'),
-    fontSize: 16 * SCALE,
-    lineHeight: 20 * SCALE,
-    fontWeight: '300',
+  bodyHotspotLabel: {
+    fontFamily: font('Medium'),
+    fontSize: 13 * SCALE,
+    fontWeight: '500',
     color: '#fff',
-  },
-  careSub: {
-    fontFamily: font('Light'),
-    fontSize: 12 * SCALE,
-    lineHeight: 13 * SCALE,
-    fontWeight: '300',
-    color: '#fff',
-  },
-  careArrowRow: {
-    alignItems: 'flex-end',
-    paddingRight: 8 * SCALE,
-    paddingBottom: 8 * SCALE,
+    padding: 10 * SCALE,
     zIndex: 1,
   },
 
-  // Figma image 30: 390×859; content frame 343×588 at x=24
+  sheetScrim: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: H_PAD,
+    paddingTop: 10 * SCALE,
+    gap: 12 * SCALE,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 36 * SCALE,
+    height: 4 * SCALE,
+    borderRadius: 2,
+    backgroundColor: 'rgba(51,51,51,0.2)',
+    marginBottom: 4 * SCALE,
+  },
+  sheetHero: {
+    width: '100%',
+    height: 140 * SCALE,
+    borderRadius: 16,
+  },
+  sheetTitle: {
+    fontFamily: font('Medium'),
+    fontSize: 24 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
+  sheetTip: {
+    fontFamily: font('Light'),
+    fontSize: 14 * SCALE,
+    lineHeight: 21 * SCALE,
+    color: 'rgba(51,51,51,0.65)',
+  },
+  sheetPrimary: {
+    height: 48 * SCALE,
+    borderRadius: 20,
+    backgroundColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4 * SCALE,
+  },
+  sheetPrimaryText: {
+    fontFamily: font('Medium'),
+    fontSize: 15 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
+  sheetSecondary: {
+    height: 44 * SCALE,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8 * SCALE,
+  },
+  sheetSecondaryText: {
+    fontFamily: font('Light'),
+    fontSize: 14 * SCALE,
+    color: 'rgba(51,51,51,0.55)',
+  },
+
   howSection: {
     width: SW,
-    minHeight: 859 * SCALE,
+    minHeight: 620 * SCALE,
     marginTop: 0,
     overflow: 'hidden',
     position: 'relative',
@@ -945,7 +1532,6 @@ const s = StyleSheet.create({
     bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.15)',
   },
-  // Figma white blur strip ≈ 22pt above content
   howFade: {
     position: 'absolute',
     top: 0,
@@ -954,24 +1540,14 @@ const s = StyleSheet.create({
     height: 22 * SCALE,
     zIndex: 2,
   },
-  // paddingTop 90 = image→content offset (2314−2224); gap 50 = header→cards
   howContent: {
     width: CONTENT_W,
     alignSelf: 'center',
     paddingTop: 90 * SCALE,
-    gap: 50 * SCALE,
+    gap: 28 * SCALE,
     zIndex: 1,
   },
-  // Figma header: gap 25 between title block and See More
   howHeader: { gap: 25 * SCALE },
-  howSteps: { gap: 10 * SCALE },
-  howCard: {
-    borderRadius: 15,
-    overflow: 'hidden',
-    padding: 20 * SCALE,
-    backgroundColor: 'transparent',
-  },
-  // Figma: backdrop-blur-[7.3px] bg-[rgba(51,51,51,0.1)]
   howCardGlassTint: {
     position: 'absolute',
     top: 0,
@@ -980,46 +1556,85 @@ const s = StyleSheet.create({
     bottom: 0,
     backgroundColor: 'rgba(51,51,51,0.1)',
   },
-  howCardRow: {
+
+  storyStrip: {
+    gap: 8 * SCALE,
+    paddingRight: 8 * SCALE,
+  },
+  storyChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6 * SCALE,
+    paddingHorizontal: 12 * SCALE,
+    paddingVertical: 10 * SCALE,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  storyChipActive: {
+    backgroundColor: ACCENT,
+  },
+  storyChipDone: {
+    backgroundColor: 'rgba(255,255,255,0.28)',
+  },
+  storyChipNum: {
+    fontFamily: font('Medium'),
+    fontSize: 11 * SCALE,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.7)',
+  },
+  storyChipNumActive: {
+    color: INK,
+  },
+  storyChipLabel: {
+    fontFamily: font('Light'),
+    fontSize: 13 * SCALE,
+    color: 'rgba(255,255,255,0.9)',
+  },
+  storyChipLabelActive: {
+    fontFamily: font('Medium'),
+    fontWeight: '500',
+    color: INK,
+  },
+  storyCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    padding: 22 * SCALE,
+    gap: 10 * SCALE,
+  },
+  storyCardEyebrow: {
+    fontFamily: font('Medium'),
+    fontSize: 11 * SCALE,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.65)',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  storyCardTitle: {
+    fontFamily: font('Medium'),
+    fontSize: 22 * SCALE,
+    fontWeight: '500',
+    color: '#fff',
+    lineHeight: 28 * SCALE,
+  },
+  storyCardBody: {
+    fontFamily: font('Light'),
+    fontSize: 13 * SCALE,
+    lineHeight: 19 * SCALE,
+    color: 'rgba(255,255,255,0.85)',
+  },
+  storyCardCta: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginTop: 8 * SCALE,
+    paddingTop: 14 * SCALE,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.25)',
   },
-  howCardLeft: { width: 240 * SCALE, gap: 20 * SCALE },
-  howCardRight: {
-    width: 25 * SCALE,
-    height: 86 * SCALE,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  howCardTitle: {
-    fontFamily: font('Medium'),
-    fontSize: 16 * SCALE,
-    lineHeight: 20 * SCALE,
-    fontWeight: '500',
-    color: '#fff',
-  },
-  howCardBody: {
+  storyCardCtaText: {
     fontFamily: font('Light'),
     fontSize: 14 * SCALE,
-    lineHeight: 18 * SCALE,
-    fontWeight: '300',
     color: '#fff',
-  },
-  howCardNum: {
-    fontFamily: font('Light'),
-    fontSize: 12 * SCALE,
-    fontWeight: '300',
-    color: '#fff',
-    textAlign: 'center',
-  },
-  howPlus: {
-    width: 25 * SCALE,
-    height: 25 * SCALE,
-    borderRadius: 12.5 * SCALE,
-    backgroundColor: ACCENT,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 
   tabBar: {

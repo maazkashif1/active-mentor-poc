@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { useAppStore } from '../../stores/appStore';
+import { physioPhotoSource } from '../../utils/physioAvatar';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -40,11 +41,7 @@ const IMG = {
   search: require('../../assets/images/figma/icon_search.png'),
   arrow: require('../../assets/images/figma/icon_arrow_card.png'),
   star: require('../../assets/images/figma/profile/icon_star.png'),
-  ahmed: require('../../assets/images/figma/physio_ahmed.png'),
-  sania: require('../../assets/images/figma/physio_sania.png'),
 };
-
-const PLACEHOLDERS = [IMG.ahmed, IMG.sania];
 
 export const FIND_FILTERS = [
   'All',
@@ -102,9 +99,7 @@ function PhysioRow({
   index: number;
   onPress: () => void;
 }) {
-  const photo = item.photo
-    ? { uri: item.photo }
-    : PLACEHOLDERS[index % PLACEHOLDERS.length];
+  const photo = physioPhotoSource(item);
   const specialty = item.specialty || item.specialization || 'Physiotherapist';
   const years = item.yearsExperience;
   const rating = item.rating ?? (4.5 + (index % 4) * 0.1).toFixed(1);
@@ -268,7 +263,11 @@ export default function BookingScreen({ navigation, route }: Props) {
             <PhysioRow
               item={item}
               index={index}
-              onPress={() => navigation.navigate('DoctorProfile' as any, { physio: item })}
+              onPress={() =>
+                navigation.navigate('DoctorProfile' as any, {
+                  physio: { ...item, localPhoto: physioPhotoSource(item) },
+                })
+              }
             />
           )}
         />
