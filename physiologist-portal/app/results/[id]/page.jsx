@@ -43,7 +43,7 @@ export default function ResultsPage() {
         {loading && <p className="text-white/50">Loading…</p>}
         {error && <p className="text-red-400">{error}</p>}
         {!loading && results.length === 0 && (
-          <p className="text-white/40">No results yet — patient hasn't completed the exercise.</p>
+          <p className="text-white/40">No results yet — patient hasn&apos;t completed the exercise.</p>
         )}
 
         <div className="space-y-6">

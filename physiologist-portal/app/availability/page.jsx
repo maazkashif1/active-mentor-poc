@@ -1,16 +1,25 @@
 'use client';
-import { Suspense } from 'react';
-import { useEffect, useState, useMemo } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Nav from '../../components/Nav';
+import Link from 'next/link';
+import AppShell from '../../components/ui/AppShell';
+import PageHeader from '../../components/ui/PageHeader';
+import GlassCard from '../../components/ui/GlassCard';
+import EmptyState from '../../components/ui/EmptyState';
+import ErrorState from '../../components/ui/ErrorState';
+import StatusPill from '../../components/ui/StatusPill';
+import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from '../../components/ui/Icons';
+import { CalendarSkeleton, ProfileSkeleton } from '../../components/ui/Skeletons';
 import { api, getToken } from '../../lib/api';
 
-const DAYS      = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DAY_INDEX = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
+const DAY_LETTER = { Mon: 'M', Tue: 'T', Wed: 'W', Thu: 'T', Fri: 'F', Sat: 'S', Sun: 'S' };
 const DURATIONS = [15, 20, 30, 45, 60];
-const MONTH_NAMES = ['January','February','March','April','May','June',
-                     'July','August','September','October','November','December'];
-const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function toMins(t) {
   const [h, m] = t.split(':').map(Number);
@@ -19,28 +28,22 @@ function toMins(t) {
 function toTimeStr(mins) {
   return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
 }
-function to12h(t) {
-  let [h, m] = t.split(':').map(Number);
-  const period = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  return `${h}:${String(m).padStart(2, '0')} ${period}`;
-}
 
 function generateForPeriod({ workDays, startTime, endTime, duration, breakStart, breakEnd }) {
-  const slots  = [];
+  const slots = [];
   const startM = toMins(startTime);
-  const endM   = toMins(endTime);
-  const brkS   = breakStart ? toMins(breakStart) : null;
-  const brkE   = breakEnd   ? toMins(breakEnd)   : null;
+  const endM = toMins(endTime);
+  const brkS = breakStart ? toMins(breakStart) : null;
+  const brkE = breakEnd ? toMins(breakEnd) : null;
 
-  const today   = new Date();
+  const today = new Date();
   today.setHours(0, 0, 0, 0);
   const endDate = new Date(today.getFullYear(), today.getMonth() + 2, 0);
 
   const cur = new Date(today);
   while (cur <= endDate) {
     if (workDays.some(d => DAY_INDEX[d] === cur.getDay())) {
-      const dateStr = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
+      const dateStr = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
       let t = startM;
       while (t + duration <= endM) {
         const inBreak = brkS !== null && !(t + duration <= brkS || t >= brkE);
@@ -63,108 +66,46 @@ function slotMap(slots) {
 }
 
 function buildGrid(year, month) {
-  const first    = new Date(year, month, 1);
-  const last     = new Date(year, month + 1, 0);
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
   const startPad = (first.getDay() + 6) % 7;
-  const days     = Array(startPad).fill(null);
+  const days = Array(startPad).fill(null);
   for (let d = 1; d <= last.getDate(); d++) days.push(d);
   while (days.length % 7 !== 0) days.push(null);
   return days;
 }
 
+function isoDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 function fmtDate(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const d = new Date(`${dateStr}T00:00:00`);
+  return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
-// ── Day modal ─────────────────────────────────────────────────────────────────
-function DayModal({ dateStr, daySlots, onClose, onDelete }) {
-  const avail  = daySlots.filter(s => !s.isBooked);
-  const booked = daySlots.filter(s =>  s.isBooked);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div className="relative w-full max-w-sm rounded-2xl border border-white/10 bg-[#1a1a1d] shadow-2xl"
-        onClick={e => e.stopPropagation()}>
-
-        {/* Header */}
-        <div className="flex items-start justify-between p-5 border-b border-white/8">
-          <div>
-            <p className="text-white font-semibold text-sm">{fmtDate(dateStr)}</p>
-            <p className="text-white/35 text-xs mt-0.5">
-              {avail.length} available · {booked.length} booked
-            </p>
-          </div>
-          <button onClick={onClose}
-            className="text-white/30 hover:text-white transition-colors text-lg leading-none mt-0.5">
-            ×
-          </button>
-        </div>
-
-        {/* Slots list */}
-        <div className="p-4 max-h-80 overflow-y-auto space-y-1.5">
-          {daySlots.length === 0 ? (
-            <p className="text-white/25 text-sm text-center py-6">No slots for this day.</p>
-          ) : (
-            daySlots.map(slot => (
-              <div key={slot._id}
-                className={`flex items-center justify-between rounded-lg px-3 py-2 ${
-                  slot.isBooked ? 'bg-[#EC9F05]/10' : 'bg-white/[0.04]'
-                }`}>
-                <div className="flex items-center gap-3">
-                  <span className={`tabular-nums text-sm font-medium ${
-                    slot.isBooked ? 'text-[#EC9F05]' : 'text-white'
-                  }`}>
-                    {to12h(slot.time)}
-                  </span>
-                  <span className={`text-[11px] px-1.5 py-0.5 rounded ${
-                    slot.isBooked
-                      ? 'bg-[#EC9F05]/15 text-[#EC9F05]'
-                      : 'bg-white/8 text-white/40'
-                  }`}>
-                    {slot.isBooked ? 'Booked' : 'Available'}
-                  </span>
-                </div>
-                {!slot.isBooked && (
-                  <button onClick={() => onDelete(slot._id)}
-                    className="text-white/20 hover:text-red-400 transition-colors text-sm">
-                    Remove
-                  </button>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Page ─────────────────────────────────────────────────────────────────────
 function AvailabilityInner() {
-  const router       = useRouter();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const isOnboarding = searchParams.get('onboarding') === '1';
 
-  const [workDays,   setWorkDays]   = useState(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
-  const [startTime,  setStartTime]  = useState('09:00');
-  const [endTime,    setEndTime]    = useState('17:00');
-  const [duration,   setDuration]   = useState(30);
+  const [workDays, setWorkDays] = useState(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
+  const [startTime, setStartTime] = useState('09:00');
+  const [endTime, setEndTime] = useState('17:00');
+  const [duration, setDuration] = useState(30);
   const [breakStart, setBreakStart] = useState('12:00');
-  const [breakEnd,   setBreakEnd]   = useState('13:00');
+  const [breakEnd, setBreakEnd] = useState('13:00');
 
-  const [slots,         setSlots]         = useState([]);
-  const [loading,       setLoading]       = useState(true);
-  const [applying,      setApplying]      = useState(false);
-  const [error,         setError]         = useState('');
-  const [success,       setSuccess]       = useState('');
-  const [scheduleOpen,  setScheduleOpen]  = useState(false);   // collapsed by default
-  const [selectedDate,  setSelectedDate]  = useState(null);    // modal
+  const [slots, setSlots] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [applying, setApplying] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [selectedDate, setSelectedDate] = useState(() => isoDate(new Date()));
 
   const todayObj = new Date();
-  const [viewYear,  setViewYear]  = useState(todayObj.getFullYear());
+  const todayStr = isoDate(todayObj);
+  const [viewYear, setViewYear] = useState(todayObj.getFullYear());
   const [viewMonth, setViewMonth] = useState(todayObj.getMonth());
 
   useEffect(() => {
@@ -183,15 +124,15 @@ function AvailabilityInner() {
       if (schedRes?.schedule) {
         const s = schedRes.schedule;
         if (s.workDays?.length) setWorkDays(s.workDays);
-        if (s.startTime)        setStartTime(s.startTime);
-        if (s.endTime)          setEndTime(s.endTime);
-        if (s.breakStart)       setBreakStart(s.breakStart);
-        if (s.breakEnd)         setBreakEnd(s.breakEnd);
-        if (s.duration)         setDuration(s.duration);
+        if (s.startTime) setStartTime(s.startTime);
+        if (s.endTime) setEndTime(s.endTime);
+        if (s.breakStart) setBreakStart(s.breakStart);
+        if (s.breakEnd) setBreakEnd(s.breakEnd);
+        if (s.duration) setDuration(s.duration);
       }
     }).catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [router]);
 
   const handleApply = async () => {
     setError(''); setSuccess('');
@@ -203,11 +144,10 @@ function AvailabilityInner() {
         api.delete('/api/physiologist/slots'),
         api.patch('/api/physiologist/schedule', schedule),
       ]);
-      const res   = await api.post('/api/physiologist/slots/bulk', { slots: newSlots });
+      const res = await api.post('/api/physiologist/slots/bulk', { slots: newSlots });
       const fresh = await api.get('/api/physiologist/my-slots');
       setSlots(fresh.slots || []);
       setSuccess(`Schedule applied — ${res.count} slots created.`);
-      setScheduleOpen(false);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -224,12 +164,12 @@ function AvailabilityInner() {
     }
   };
 
-  const byDate  = useMemo(() => slotMap(slots), [slots]);
+  const byDate = useMemo(() => slotMap(slots), [slots]);
   const calGrid = useMemo(() => buildGrid(viewYear, viewMonth), [viewYear, viewMonth]);
 
-  const minYear  = todayObj.getFullYear();
+  const minYear = todayObj.getFullYear();
   const minMonth = todayObj.getMonth();
-  const maxYear  = minMonth === 11 ? minYear + 1 : minYear;
+  const maxYear = minMonth === 11 ? minYear + 1 : minYear;
   const maxMonth = (minMonth + 1) % 12;
 
   const atMin = viewYear === minYear && viewMonth === minMonth;
@@ -246,208 +186,273 @@ function AvailabilityInner() {
     else setViewMonth(m => m + 1);
   };
 
-  const modalSlots = selectedDate ? (byDate[selectedDate] || []) : [];
+  const daySlots = selectedDate
+    ? [...(byDate[selectedDate] || [])].sort((a, b) => a.time.localeCompare(b.time))
+    : [];
+  const freeSlots = daySlots.filter(s => !s.isBooked);
+  const bookedSlots = daySlots.filter(s => s.isBooked);
+  const loadFailed = !loading && error && slots.length === 0;
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#111113]">
-      <Nav />
-      <main className="flex-1 p-6 max-w-5xl mx-auto w-full">
+    <AppShell>
+      <PageHeader title="Availability" subtitle="Your weekly schedule and open sessions" />
 
-        {isOnboarding && (
-          <div className="mb-6 rounded-xl border border-[#DA7235]/30 bg-[#DA7235]/8 p-4">
-            <p className="text-[#DA7235] font-semibold text-sm">Account created. One last step.</p>
-            <p className="text-white/50 text-xs mt-0.5">Set your working hours and apply your schedule so patients can book appointments.</p>
+      {isOnboarding && (
+        <div className="banner banner-copper">
+          <div>
+            <p><strong>Account created. One last step.</strong></p>
+            <p>Set your working hours and apply your schedule so patients can book appointments.</p>
           </div>
-        )}
-
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white">Availability</h1>
         </div>
+      )}
 
-        {/* ── Schedule (collapsible) ────────────────────────────────────── */}
-        <div className="rounded-xl border border-white/8 bg-white/[0.03] mb-6 overflow-hidden">
+      {error && (
+        <div className="banner" role="alert" style={{ background: 'var(--rose-tint)', color: 'var(--rose)' }}>
+          <p>{error}</p>
+        </div>
+      )}
 
-          {/* Accordion header */}
-          <button
-            onClick={() => setScheduleOpen(o => !o)}
-            className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/[0.02] transition-colors">
-            <div className="flex items-center gap-3">
-              <p className="text-sm font-medium text-white">Schedule</p>
-              <p className="text-xs text-white/30">
-                {workDays.join(', ')} · {startTime}–{endTime} · {duration}m sessions
-              </p>
-            </div>
-            <svg className={`w-4 h-4 text-white/30 transition-transform ${scheduleOpen ? 'rotate-180' : ''}`}
-              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          {/* Accordion body */}
-          {scheduleOpen && (
-            <div className="px-6 pb-6 space-y-6 border-t border-white/5">
-
-              {/* Working days */}
-              <div className="pt-4">
-                <p className="text-xs text-white/40 mb-2">Working days</p>
-                <div className="flex gap-1.5 flex-wrap">
-                  {DAYS.map(day => (
-                    <button key={day} onClick={() => setWorkDays(prev =>
+      <div className="stack">
+        <GlassCard className="rise">
+          <div className="schedule-strip">
+            <div>
+              <p className="label-muted">Working days</p>
+              <div className="day-picks">
+                {DAYS.map(day => (
+                  <button
+                    key={day}
+                    type="button"
+                    className="day-dot"
+                    aria-pressed={workDays.includes(day)}
+                    aria-label={day}
+                    onClick={() => setWorkDays(prev => (
                       prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
-                    )}
-                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                        workDays.includes(day)
-                          ? 'bg-[#DA7235] text-white'
-                          : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white'
-                      }`}>
-                      {day}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Hours + break */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                  { label: 'Start time',  val: startTime,  set: setStartTime },
-                  { label: 'End time',    val: endTime,    set: setEndTime },
-                  { label: 'Break start', val: breakStart, set: setBreakStart },
-                  { label: 'Break end',   val: breakEnd,   set: setBreakEnd },
-                ].map(({ label, val, set }) => (
-                  <div key={label}>
-                    <p className="text-xs text-white/40 mb-1.5">{label}</p>
-                    <input type="time" value={val} onChange={e => set(e.target.value)}
-                      className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white text-sm focus:outline-none focus:border-[#DA7235]" />
-                  </div>
+                    ))}
+                  >
+                    {DAY_LETTER[day]}
+                  </button>
                 ))}
               </div>
+            </div>
 
-              {/* Duration */}
-              <div>
-                <p className="text-xs text-white/40 mb-1.5">Session duration</p>
-                <div className="flex gap-1.5">
-                  {DURATIONS.map(d => (
-                    <button key={d} onClick={() => setDuration(d)}
-                      className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                        duration === d ? 'bg-[#DA7235] text-white' : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white'
-                      }`}>
-                      {d}m
-                    </button>
-                  ))}
-                </div>
+            <div>
+              <p className="label-muted">Hours</p>
+              <div className="time-pair">
+                <label className="time-field">
+                  Start
+                  <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} />
+                </label>
+                <label className="time-field">
+                  End
+                  <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} />
+                </label>
               </div>
+            </div>
 
-              {/* Apply */}
-              <div className="flex items-center justify-between pt-2 border-t border-white/5">
-                <div>
-                  {error   && <p className="text-red-400 text-xs">{error}</p>}
-                  {success && <p className="text-green-400 text-xs">{success}</p>}
-                </div>
-                <button onClick={handleApply} disabled={applying}
-                  className="px-6 py-2.5 rounded-lg bg-[#DA7235] text-white text-sm font-semibold hover:bg-[#c5622a] transition-colors disabled:opacity-40">
-                  {applying ? 'Applying…' : 'Apply Schedule'}
+            <div>
+              <p className="label-muted">Session length</p>
+              <div className="seg">
+                {DURATIONS.map(d => (
+                  <button
+                    key={d}
+                    type="button"
+                    aria-pressed={duration === d}
+                    onClick={() => setDuration(d)}
+                  >
+                    {d} min
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="schedule-extra">
+            <div>
+              <p className="label-muted">Break</p>
+              <div className="time-pair">
+                <label className="time-field">
+                  Break start
+                  <input type="time" value={breakStart} onChange={e => setBreakStart(e.target.value)} />
+                </label>
+                <label className="time-field">
+                  Break end
+                  <input type="time" value={breakEnd} onChange={e => setBreakEnd(e.target.value)} />
+                </label>
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              {success && <p className="form-success" role="status">{success}</p>}
+              <button type="button" className="btn-copper" onClick={handleApply} disabled={applying}>
+                {applying ? 'Applying…' : 'Apply schedule'}
+              </button>
+            </div>
+          </div>
+        </GlassCard>
+
+        <div className="cal-layout">
+          <GlassCard className="cal-card rise" style={{ animationDelay: '40ms' }}>
+            <div className="cal-head">
+              <h2>{MONTH_NAMES[viewMonth]} {viewYear}</h2>
+              <div className="month-nav">
+                <button type="button" className="icon-btn" onClick={prevMonth} disabled={atMin} aria-label="Previous month">
+                  <ChevronLeftIcon size={16} />
+                </button>
+                <button type="button" className="icon-btn" onClick={nextMonth} disabled={atMax} aria-label="Next month">
+                  <ChevronRightIcon size={16} />
                 </button>
               </div>
             </div>
-          )}
-        </div>
 
-        {/* ── Calendar ─────────────────────────────────────────────────── */}
-        <div className="rounded-xl border border-white/8 bg-white/[0.03] p-6">
+            {loading ? <CalendarSkeleton /> : loadFailed ? <ErrorState message={error} /> : (
+              <div className="cal-scroll">
+                <div className="cal-scroll-inner">
+                  <div className="dow">
+                    {DOW.map(d => <div key={d}>{d}</div>)}
+                  </div>
+                  <div className="cal-grid">
+                    {calGrid.map((day, i) => {
+                      if (!day) return <div key={`e-${i}`} />;
+                      const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                      const cellSlots = byDate[dateStr] || [];
+                      const avail = cellSlots.filter(s => !s.isBooked).length;
+                      const bookedN = cellSlots.filter(s => s.isBooked).length;
+                      const isToday = dateStr === todayStr;
+                      const isSelected = dateStr === selectedDate;
+                      const isWork = workDays.includes(WEEKDAY[new Date(`${dateStr}T00:00:00`).getDay()]);
+                      const isPast = dateStr < todayStr;
+                      const unavailable = !isSelected && cellSlots.length === 0 && (isPast || !isWork);
 
-          <div className="flex items-center justify-between mb-5">
-            <p className="text-white font-semibold">{MONTH_NAMES[viewMonth]} {viewYear}</p>
-            <div className="flex gap-1">
-              <button onClick={prevMonth} disabled={atMin}
-                className="w-7 h-7 rounded-md bg-white/5 hover:bg-white/10 text-white/50 hover:text-white text-sm flex items-center justify-center transition-colors disabled:opacity-20 disabled:cursor-not-allowed">
-                ‹
-              </button>
-              <button onClick={nextMonth} disabled={atMax}
-                className="w-7 h-7 rounded-md bg-white/5 hover:bg-white/10 text-white/50 hover:text-white text-sm flex items-center justify-center transition-colors disabled:opacity-20 disabled:cursor-not-allowed">
-                ›
-              </button>
-            </div>
-          </div>
+                      if (unavailable) {
+                        return (
+                          <div key={dateStr} className="day-cell is-off">
+                            <span className="day-num">{day}</span>
+                            <span className="sr-only">Not available</span>
+                          </div>
+                        );
+                      }
 
-          <div className="grid grid-cols-7 mb-1">
-            {DOW.map(d => (
-              <div key={d} className="text-center text-[10px] text-white/25 uppercase tracking-wider pb-2">
-                {d}
+                      return (
+                        <button
+                          key={dateStr}
+                          type="button"
+                          className={`day-cell ${isSelected ? 'is-selected' : ''}`}
+                          aria-pressed={isSelected}
+                          aria-label={`${fmtDate(dateStr)}, ${avail} free, ${bookedN} booked`}
+                          onClick={() => setSelectedDate(dateStr)}
+                        >
+                          <span className="day-num">{day}</span>
+                          {isToday && <span className="today-tag">Today</span>}
+                          <span className="day-stats">
+                            <span className="day-stat"><i className="dot dot-sage" aria-hidden="true" />{avail} free</span>
+                            {bookedN > 0 && (
+                              <span className="day-stat"><i className="dot dot-copper" aria-hidden="true" />{bookedN} booked</span>
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
+            )}
 
-          {loading ? (
-            <div className="grid grid-cols-7 gap-1">
-              {Array.from({ length: 35 }).map((_, i) => (
-                <div key={i} className="h-20 animate-pulse bg-white/5 rounded-lg" />
-              ))}
+            <div className="legend">
+              <span><i className="dot dot-sage" aria-hidden="true" /> Free sessions</span>
+              <span><i className="dot dot-copper" aria-hidden="true" /> Booked</span>
+              <span><i className="swatch" aria-hidden="true" /> Not available</span>
             </div>
-          ) : (
-            <div className="grid grid-cols-7 gap-1">
-              {calGrid.map((day, i) => {
-                if (!day) return <div key={`e-${i}`} />;
+          </GlassCard>
 
-                const dateStr  = `${viewYear}-${String(viewMonth + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-                const daySlots = byDate[dateStr] || [];
-                const avail    = daySlots.filter(s => !s.isBooked).length;
-                const bookedN  = daySlots.filter(s =>  s.isBooked).length;
-                const isToday  = todayObj.getFullYear() === viewYear &&
-                                 todayObj.getMonth()    === viewMonth &&
-                                 todayObj.getDate()     === day;
+          <GlassCard className="day-panel rise" style={{ animationDelay: '80ms' }}>
+            {loading ? <ProfileSkeleton /> : loadFailed ? <ErrorState message={error} /> : !selectedDate ? (
+              <EmptyState icon={<CalendarIcon />} title="Select a day">
+                Choose a day to see open and booked sessions.
+              </EmptyState>
+            ) : (
+              <div>
+                <p className="label-muted">Selected day</p>
+                <h2 className="panel-date">{fmtDate(selectedDate)}</h2>
+                {selectedDate === todayStr && <span className="today-tag" style={{ marginTop: 8 }}>Today</span>}
 
-                return (
-                  <button key={dateStr}
-                    onClick={() => setSelectedDate(dateStr)}
-                    className={`min-h-[80px] rounded-lg border p-1.5 flex flex-col gap-1 text-left transition-all hover:border-white/25 hover:bg-white/5 ${
-                      isToday
-                        ? 'border-[#DA7235]/50 bg-[#DA7235]/5'
-                        : daySlots.length
-                          ? 'border-white/10 bg-white/[0.02]'
-                          : 'border-white/[0.04] bg-transparent'
-                    }`}>
+                <div className="count-tiles">
+                  <div className="count-tile sage">
+                    <strong>{freeSlots.length}</strong>
+                    <span>Free sessions</span>
+                  </div>
+                  <div className="count-tile copper">
+                    <strong>{bookedSlots.length}</strong>
+                    <span>Booked</span>
+                  </div>
+                </div>
 
-                    <span className={`text-[11px] font-medium leading-none ${
-                      isToday ? 'text-[#DA7235]' : 'text-white/40'
-                    }`}>
-                      {day}
+                <dl className="meta-rows">
+                  <div>
+                    <dt>Hours</dt>
+                    <dd>{startTime} – {endTime}</dd>
+                  </div>
+                  <div>
+                    <dt>Session length</dt>
+                    <dd>{duration} minutes</dd>
+                  </div>
+                </dl>
+
+                <div className="card-head" style={{ marginTop: 16 }}>
+                  <h3 className="card-title">Booked session</h3>
+                </div>
+                {bookedSlots.length === 0 ? (
+                  <p className="label-muted">No bookings on this day.</p>
+                ) : bookedSlots.map(slot => (
+                  <Link key={slot._id} href="/appointments" className="slot-row">
+                    <span className="icon-tile"><CalendarIcon size={16} /></span>
+                    <span className="patient-meta">
+                      <span className="session-title">{slot.time}</span>
+                      <span className="session-sub">Booked session</span>
                     </span>
+                    <StatusPill status="booked" />
+                    <ChevronRightIcon size={16} />
+                  </Link>
+                ))}
 
-                    {daySlots.length > 0 && (
-                      <div className="mt-auto flex flex-col gap-0.5">
-                        {avail > 0 && (
-                          <span className="text-[10px] text-white/40 tabular-nums">{avail} free</span>
-                        )}
-                        {bookedN > 0 && (
-                          <span className="text-[10px] text-[#EC9F05]/70 tabular-nums">{bookedN} booked</span>
-                        )}
+                <div className="card-head" style={{ marginTop: 16 }}>
+                  <h3 className="card-title">Free slots</h3>
+                </div>
+                {freeSlots.length === 0 ? (
+                  <p className="label-muted">No free slots on this day.</p>
+                ) : (
+                  <div className="slot-list">
+                    {freeSlots.map(slot => (
+                      <div key={slot._id} className="slot-row">
+                        <span className="slot-time">{slot.time}</span>
+                        <StatusPill status="free" />
+                        <button
+                          type="button"
+                          className="btn-text-danger"
+                          onClick={() => handleDelete(slot._id)}
+                        >
+                          Remove
+                        </button>
                       </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </GlassCard>
         </div>
-      </main>
-
-      {/* ── Day modal ──────────────────────────────────────────────────── */}
-      {selectedDate && (
-        <DayModal
-          dateStr={selectedDate}
-          daySlots={modalSlots}
-          onClose={() => setSelectedDate(null)}
-          onDelete={async (id) => {
-            await handleDelete(id);
-            // keep modal open but reflect removal
-            setSelectedDate(s => s); // re-render
-          }}
-        />
-      )}
-    </div>
+      </div>
+    </AppShell>
   );
 }
 
 export default function AvailabilityPage() {
-  return <Suspense><AvailabilityInner /></Suspense>;
+  return (
+    <Suspense fallback={(
+      <AppShell>
+        <PageHeader title="Availability" subtitle="Your weekly schedule and open sessions" />
+        <GlassCard><CalendarSkeleton /></GlassCard>
+      </AppShell>
+    )}>
+      <AvailabilityInner />
+    </Suspense>
+  );
 }

@@ -2,58 +2,19 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import Nav from '../../components/Nav';
+import AppShell from '../../components/ui/AppShell';
+import PageHeader from '../../components/ui/PageHeader';
+import GlassCard from '../../components/ui/GlassCard';
+import StatCard from '../../components/ui/StatCard';
+import StatusPill from '../../components/ui/StatusPill';
+import Avatar from '../../components/ui/Avatar';
+import EmptyState from '../../components/ui/EmptyState';
+import ErrorState from '../../components/ui/ErrorState';
+import EcgLine from '../../components/ui/EcgLine';
+import PlusPattern from '../../components/ui/PlusPattern';
+import { CalendarIcon, CheckIcon, ClockIcon, PulseIcon, UsersIcon, AlertIcon, ArrowRightIcon } from '../../components/ui/Icons';
+import { ListSkeleton, TableSkeleton } from '../../components/ui/Skeletons';
 import { api, getToken } from '../../lib/api';
-import { SkStatCard, SkChartBar, SkQueueRow, SkTableRow } from '../../components/Skeleton';
-
-const STATUS_COLOR = {
-  pending:    '#888',
-  active:     '#EC9F05',
-  summarised: '#5ba4cf',
-  approved:   '#22c55e',
-};
-const STATUS_LABEL = {
-  pending:    'Pending',
-  active:     'Active',
-  summarised: 'Awaiting Review',
-  approved:   'Approved',
-};
-
-function BarChart({ data, labels }) {
-  const max = Math.max(...data, 1);
-  const BAR_W = 24;
-  const GAP = 6;
-  const H = 64;
-  const W = data.length * (BAR_W + GAP) - GAP;
-  return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H + 20}`} preserveAspectRatio="none" style={{ display: 'block' }}>
-      {data.map((v, i) => {
-        const barH = Math.max((v / max) * H, v > 0 ? 3 : 0);
-        const x = i * (BAR_W + GAP);
-        const y = H - barH;
-        return (
-          <g key={i}>
-            <rect x={x} y={0} width={BAR_W} height={H} rx={4} fill="rgba(255,255,255,0.03)" />
-            <rect x={x} y={y} width={BAR_W} height={barH} rx={4} fill="#DA7235" opacity={0.85} />
-            <text x={x + BAR_W / 2} y={H + 14} textAnchor="middle" fill="rgba(255,255,255,0.35)" fontSize={9} fontFamily="system-ui">
-              {labels[i]}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function StatCard({ label, value, sub, accent }) {
-  return (
-    <div className="rounded-xl border border-white/8 bg-white/[0.03] p-5 flex flex-col gap-1">
-      <p className="text-xs text-white/40 uppercase tracking-wider">{label}</p>
-      <p className="text-3xl font-bold tabular-nums" style={{ color: accent }}>{value}</p>
-      {sub && <p className="text-xs text-white/30">{sub}</p>}
-    </div>
-  );
-}
 
 function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -62,6 +23,79 @@ function timeAgo(dateStr) {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+
+function localTodayLabel(date) {
+  return date.toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+function sessionStamp(slotDate, slotTime) {
+  const time = String(slotTime || '00:00').slice(0, 5);
+  return new Date(`${slotDate}T${time}`).getTime();
+}
+
+function getNextSession(sessions) {
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  let best = null;
+  let bestT = Infinity;
+  sessions.forEach((s) => {
+    if (s.status !== 'pending' && s.status !== 'active') return;
+    const t = sessionStamp(s.slotDate, s.slotTime);
+    if (Number.isNaN(t) || t < cutoff || t >= bestT) return;
+    best = s;
+    bestT = t;
+  });
+  return best;
+}
+
+function formatSessionDate(slotDate) {
+  const d = new Date(`${slotDate}T00:00:00`);
+  const today = new Date();
+  const same = d.getFullYear() === today.getFullYear()
+    && d.getMonth() === today.getMonth()
+    && d.getDate() === today.getDate();
+  const long = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  return same ? `Today · ${long}` : long;
+}
+
+function DateChip() {
+  const label = localTodayLabel(new Date());
+  return (
+    <div className="date-chip">
+      <CalendarIcon size={16} />
+      <span suppressHydrationWarning>{label}</span>
+    </div>
+  );
+}
+
+function WeekBars({ data, labels, todayIndex }) {
+  const max = Math.max(...data, 1);
+  const summary = labels.map((label, i) => `${label} ${data[i]}`).join(', ');
+  return (
+    <div className="week-bars" role="img" aria-label={`Sessions over the last 7 days: ${summary}`}>
+      {data.map((value, i) => {
+        const isToday = i === todayIndex;
+        const height = value === 0 ? 0 : Math.max((value / max) * 100, isToday ? 36 : 10);
+        return (
+          <div className="week-col" key={labels[i]}>
+            <div className="week-track">
+              {value > 0 && (
+                <div className={`week-fill ${isToday ? 'is-today' : ''}`} style={{ height: `${height}%` }}>
+                  {isToday && <span className="week-count">{value}</span>}
+                </div>
+              )}
+            </div>
+            <span className={`week-label ${isToday ? 'is-today' : ''}`}>{labels[i]}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export default function DashboardPage() {
@@ -80,9 +114,9 @@ export default function DashboardPage() {
       .then(([s, a]) => { setSessions(s); setActivity(Array.isArray(a) ? a : []); })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [router]);
 
-  const pending  = sessions.filter(s => s.status === 'summarised').length;
+  const pending = sessions.filter(s => s.status === 'summarised').length;
   const approved = sessions.filter(s => s.status === 'approved').length;
   const patients = new Set(sessions.map(s => String(s.patientId?._id || s.patientId))).size;
 
@@ -91,175 +125,195 @@ export default function DashboardPage() {
     d.setDate(d.getDate() - (6 - i));
     return d.toISOString().split('T')[0];
   });
-  const chartData   = last7.map(date => sessions.filter(s => s.slotDate === date).length);
+  const chartData = last7.map(date => sessions.filter(s => s.slotDate === date).length);
   const chartLabels = last7.map(d => {
-    const day = new Date(d + 'T00:00:00');
-    return ['Su','Mo','Tu','We','Th','Fr','Sa'][day.getDay()];
+    const day = new Date(`${d}T00:00:00`);
+    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day.getDay()];
   });
+  const weekTotal = chartData.reduce((sum, n) => sum + n, 0);
 
-  const pending_sessions = sessions.filter(s => s.status === 'summarised').slice(0, 6);
-  const recent_sessions  = sessions.slice(0, 8);
+  const pendingSessions = sessions.filter(s => s.status === 'summarised').slice(0, 6);
+  const recentSessions = sessions.slice(0, 8);
+  const nextSession = getNextSession(sessions);
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#111113]">
-      <Nav />
-      <main className="flex-1 p-6 max-w-6xl mx-auto w-full">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-          <p className="text-white/40 text-sm mt-1">Overview of your practice</p>
+    <AppShell>
+      <PageHeader title="Dashboard" subtitle="Overview of your practice">
+        <DateChip />
+      </PageHeader>
+
+      <div className="stack">
+        <div className="dash-hero-row">
+          <article className="hero-card rise">
+            <PlusPattern />
+            <div className="hero-glow" aria-hidden="true" />
+            {nextSession ? <EcgLine className="hero-ecg" /> : null}
+            <div className="hero-body">
+              {loading ? (
+                <ListSkeleton rows={3} tone="dark" />
+              ) : error ? (
+                <ErrorState message={error} tone="dark" />
+              ) : nextSession ? (
+                <>
+                  <p className="hero-kicker">Next session</p>
+                  <p className="hero-time">{nextSession.slotTime}</p>
+                  <p className="hero-date">{formatSessionDate(nextSession.slotDate)}</p>
+                  <hr className="hero-divider" />
+                  <div className="hero-patient">
+                    <Avatar name={nextSession.patientId?.name || 'Unknown patient'} />
+                    <div>
+                      <p className="hero-name">{nextSession.patientId?.name || 'Unknown patient'}</p>
+                      {nextSession.complaints ? (
+                        <p className="hero-program">{nextSession.complaints}</p>
+                      ) : null}
+                    </div>
+                    <StatusPill status={nextSession.status} />
+                    <Link href={`/sessions/${nextSession._id}`} className="btn-copper">
+                      Open session
+                      <ArrowRightIcon size={16} />
+                    </Link>
+                  </div>
+                </>
+              ) : (
+                <EmptyState tone="dark" icon={<CalendarIcon />} title="No upcoming session">
+                  When a patient books, their session will show up here.
+                </EmptyState>
+              )}
+            </div>
+          </article>
+
+          <GlassCard padded={false} className="stats-grid rise" style={{ animationDelay: '40ms' }}>
+            {loading ? (
+              <div className="stat-cell" style={{ gridColumn: '1 / -1' }}><ListSkeleton rows={2} /></div>
+            ) : error ? (
+              <div className="stat-cell" style={{ gridColumn: '1 / -1' }}><ErrorState message={error} /></div>
+            ) : (
+              <>
+                <StatCard label="Total patients" value={patients} sub="Unique patients" tone="amber" icon={<UsersIcon size={16} />} />
+                <StatCard label="Total sessions" value={sessions.length} sub="All time" tone="copper" icon={<CalendarIcon size={16} />} />
+                <StatCard label="Pending review" value={pending} sub="Need your attention" tone="rose" icon={<AlertIcon size={16} />} />
+                <StatCard label="Approved" value={approved} sub="Sessions completed" tone="sage" icon={<CheckIcon size={16} />} />
+              </>
+            )}
+          </GlassCard>
         </div>
 
-        {error && <p className="text-red-400 mb-4 text-sm">{error}</p>}
+        <div className="dash-row">
+          <GlassCard className="rise" style={{ animationDelay: '80ms' }}>
+            <div className="card-head">
+              <h2 className="card-title">Sessions · last 7 days</h2>
+              {!loading && !error && (
+                <span className="label-muted">{weekTotal} session{weekTotal === 1 ? '' : 's'}</span>
+              )}
+            </div>
+            {loading ? <ListSkeleton rows={2} /> : error ? <ErrorState message={error} /> : (
+              <WeekBars data={chartData} labels={chartLabels} todayIndex={6} />
+            )}
+          </GlassCard>
 
-        {/* Stat cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          {loading ? (
-            Array.from({ length: 4 }).map((_, i) => <SkStatCard key={i} />)
-          ) : (
-            <>
-              <StatCard label="Total Patients"   value={patients}        accent="#EC9F05" sub="Unique Patients" />
-              <StatCard label="Total Sessions"   value={sessions.length} accent="#DA7235" sub="All Time" />
-              <StatCard label="Pending Review"   value={pending}         accent="#ef4444" sub="Need Your Attention" />
-              <StatCard label="Approved"         value={approved}        accent="#22c55e" sub="Sessions Completed" />
-            </>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-6">
-          {/* Bar chart */}
-          <div className="md:col-span-2 rounded-xl border border-white/8 bg-white/[0.03] p-5">
-            <p className="text-xs text-white/40 uppercase tracking-wider mb-4">Sessions · last 7 days</p>
-            {loading ? <SkChartBar /> : <BarChart data={chartData} labels={chartLabels} />}
-          </div>
-
-          {/* Pending review queue */}
-          <div className="md:col-span-3 rounded-xl border border-white/8 bg-white/[0.03] p-5">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-xs text-white/40 uppercase tracking-wider">Awaiting Review</p>
-              <Link href="/appointments?status=summarised" className="text-xs text-[#DA7235] hover:underline">
-                View all →
+          <GlassCard className="rise" style={{ animationDelay: '120ms' }}>
+            <div className="card-head">
+              <h2 className="card-title">Awaiting review</h2>
+              <Link href="/appointments?status=summarised" className="link-copper">View all →</Link>
+            </div>
+            {loading ? <ListSkeleton rows={3} /> : error ? <ErrorState message={error} /> : pendingSessions.length === 0 ? (
+              <EmptyState icon={<CheckIcon />} title="All caught up">
+                No sessions are waiting on your review right now.
+              </EmptyState>
+            ) : pendingSessions.map(s => (
+              <Link key={s._id} href={`/sessions/${s._id}`} className="queue-row">
+                <span className="cell-person">
+                  <Avatar name={s.patientId?.name || 'Patient'} size="sm" />
+                  <span>
+                    <span className="session-title">{s.patientId?.name || 'Patient'}</span>
+                    <span className="session-sub">{s.slotDate} at {s.slotTime}</span>
+                  </span>
+                </span>
+                <StatusPill status="summarised" />
               </Link>
-            </div>
-            {loading
-              ? Array.from({ length: 3 }).map((_, i) => <SkQueueRow key={i} />)
-              : pending_sessions.length === 0
-              ? <p className="text-white/30 text-sm py-4 text-center">All caught up</p>
-              : pending_sessions.map(s => (
-                  <Link
-                    key={s._id}
-                    href={`/sessions/${s._id}`}
-                    className="flex items-center justify-between py-2.5 border-b border-white/5 last:border-0 hover:text-[#EC9F05] transition-colors group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded-full bg-[#DA7235]/20 flex items-center justify-center text-[#DA7235] text-xs font-bold">
-                        {(s.patientId?.name || 'P')[0].toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-white group-hover:text-[#EC9F05] transition-colors">
-                          {s.patientId?.name || 'Patient'}
-                        </p>
-                        <p className="text-xs text-white/30">{s.slotDate} at {s.slotTime}</p>
-                      </div>
-                    </div>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-[#5ba4cf]/15 text-[#5ba4cf]">
-                      Review
-                    </span>
-                  </Link>
-                ))
-            }
-          </div>
+            ))}
+          </GlassCard>
         </div>
 
-        {/* Patient exercise activity */}
-        <div className="rounded-xl border border-white/8 bg-white/[0.03] p-5 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-xs text-white/40 uppercase tracking-wider">Patient Exercise Activity</p>
-            <span className="text-xs text-white/20">Last 20 completions</span>
-          </div>
-          {loading ? (
-            Array.from({ length: 4 }).map((_, i) => <SkQueueRow key={i} />)
-          ) : activity.length === 0 ? (
-            <p className="text-white/30 text-sm py-4 text-center">No exercise results yet</p>
-          ) : (
-            <div className="space-y-0">
-              {activity.map((r) => {
-                const a = r.analysis || {};
-                const name = r.patientId?.name || 'Patient';
-                const exercise = r.prescriptionId?.exerciseId?.replace(/_/g, ' ') || 'exercise';
-                const score = r.score != null ? `${r.score}%` : null;
-                const rom = a.romPercent != null ? `${Math.round(a.romPercent)}% ROM` : null;
-                const prescId = r.prescriptionId?._id || r.prescriptionId;
-                return (
-                  <Link
-                    key={r._id}
-                    href={`/results/${prescId}`}
-                    className="flex items-center justify-between py-3 border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-[#EC9F05]/15 flex items-center justify-center text-[#EC9F05] text-xs font-bold shrink-0">
-                        {name[0].toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-white group-hover:text-[#EC9F05] transition-colors">{name}</p>
-                        <p className="text-xs text-white/40 capitalize">
-                          {exercise} · {r.reps} reps
-                          {score ? ` · ${score}` : ''}
-                          {rom ? ` · ${rom}` : ''}
-                        </p>
-                      </div>
-                    </div>
-                    <span className="text-xs text-white/30 shrink-0 ml-4">{timeAgo(r.createdAt)}</span>
-                  </Link>
-                );
-              })}
+        <div className="dash-row">
+          <GlassCard className="rise" style={{ animationDelay: '160ms' }}>
+            <div className="card-head">
+              <h2 className="card-title">Recent sessions</h2>
+              <Link href="/appointments" className="link-copper">View all →</Link>
             </div>
-          )}
-        </div>
-
-        {/* Recent sessions table */}
-        <div className="rounded-xl border border-white/8 bg-white/[0.03] p-5">
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-xs text-white/40 uppercase tracking-wider">Recent Sessions</p>
-            <Link href="/appointments" className="text-xs text-[#DA7235] hover:underline">View all →</Link>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
-              <thead>
-                <tr className="border-b border-white/5">
-                  {['Patient', 'Date', 'Time', 'Status', ''].map(h => (
-                    <th key={h} className="text-left text-xs text-white/30 py-2 pr-4 font-normal">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {loading
-                  ? Array.from({ length: 4 }).map((_, i) => <SkTableRow key={i} />)
-                  : recent_sessions.map(s => (
-                      <tr key={s._id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors">
-                        <td className="py-2.5 pr-4 font-medium">{s.patientId?.name || '—'}</td>
-                        <td className="py-2.5 pr-4 text-white/50 tabular-nums">{s.slotDate}</td>
-                        <td className="py-2.5 pr-4 text-white/50 tabular-nums">{s.slotTime}</td>
-                        <td className="py-2.5 pr-4">
-                          <span className="text-xs px-2 py-0.5 rounded-full" style={{
-                            background: STATUS_COLOR[s.status] + '20',
-                            color: STATUS_COLOR[s.status],
-                          }}>
-                            {STATUS_LABEL[s.status] || s.status}
+            {loading ? <TableSkeleton /> : error ? <ErrorState message={error} /> : recentSessions.length === 0 ? (
+              <EmptyState icon={<ClockIcon />} title="No sessions yet">
+                Sessions you book will appear here.
+              </EmptyState>
+            ) : (
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      {['Patient', 'Date', 'Time', 'Status'].map(h => <th key={h} scope="col">{h}</th>)}
+                      <th scope="col"><span className="sr-only">Open</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentSessions.map(s => (
+                      <tr key={s._id}>
+                        <td>
+                          <span className="cell-person">
+                            <Avatar name={s.patientId?.name} size="sm" />
+                            {s.patientId?.name || '—'}
                           </span>
                         </td>
-                        <td className="py-2.5 text-right">
-                          <Link href={`/sessions/${s._id}`} className="text-xs text-white/30 hover:text-[#DA7235] transition-colors">
-                            Open →
-                          </Link>
+                        <td className="tabular-nums">{s.slotDate}</td>
+                        <td className="tabular-nums">{s.slotTime}</td>
+                        <td><StatusPill status={s.status} /></td>
+                        <td>
+                          <Link href={`/sessions/${s._id}`} className="link-copper">Open</Link>
                         </td>
                       </tr>
-                    ))
-                }
-              </tbody>
-            </table>
-          </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </GlassCard>
+
+          <GlassCard className="rise" style={{ animationDelay: '200ms' }}>
+            <div className="card-head">
+              <h2 className="card-title">Patient exercise activity</h2>
+              <span className="label-muted">Last 20 completions</span>
+            </div>
+            {loading ? <ListSkeleton rows={4} /> : error ? <ErrorState message={error} /> : activity.length === 0 ? (
+              <EmptyState icon={<PulseIcon />} title="No exercise results yet">
+                Completed exercises from your patients will show up here.
+              </EmptyState>
+            ) : activity.map((r) => {
+              const a = r.analysis || {};
+              const name = r.patientId?.name || 'Patient';
+              const exercise = r.prescriptionId?.exerciseId?.replace(/_/g, ' ') || 'exercise';
+              const score = r.score != null ? `${r.score}%` : null;
+              const rom = a.romPercent != null ? `${Math.round(a.romPercent)}% ROM` : null;
+              const prescId = r.prescriptionId?._id || r.prescriptionId;
+              return (
+                <Link key={r._id} href={`/results/${prescId}`} className="activity-row">
+                  <span className="cell-person">
+                    <Avatar name={name} size="sm" />
+                    <span>
+                      <span className="session-title">{name}</span>
+                      <span className="session-sub">
+                        <span className="capitalize">{exercise}</span>
+                        {` · ${r.reps} reps`}
+                        {score ? ` · ${score}` : ''}
+                        {rom ? ` · ${rom}` : ''}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="label-muted">{timeAgo(r.createdAt)}</span>
+                </Link>
+              );
+            })}
+          </GlassCard>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }
