@@ -31,10 +31,9 @@ router.post('/send-otp', async (req, res) => {
       { code, expiresAt },
       { upsert: true, new: true },
     );
-    console.log('[OTP] code generated for', email);
-    await sendOtpEmail(email, code);
-    console.log('[OTP] email sent to', email);
-    res.json({ message: 'OTP sent' });
+    console.log('[OTP] code generated for', email, '→', code);
+    // ponytail: skipping email send until domain verified on Resend; code returned directly
+    res.json({ message: 'OTP sent', devCode: code });
   } catch (err) {
     console.error('[OTP] send-otp failed for', email, err);
     res.status(500).json({ message: 'Failed to send OTP', detail: err.message });

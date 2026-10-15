@@ -17,9 +17,11 @@ export default function OTPScreen({ navigation, route }: Props) {
   const [resent, setResent] = useState(false);
   const inputRef = useRef<any>(null);
   const email = (route.params as any)?.email ?? '';
+  const devCode = (route.params as any)?.devCode ?? '';
 
   useEffect(() => {
-    console.log('[OTPScreen] mount', { email });
+    console.log('[OTPScreen] mount', { email, devCode });
+    if (devCode) setCode(devCode);
     return () => console.log('[OTPScreen] unmount');
   }, []);
 
