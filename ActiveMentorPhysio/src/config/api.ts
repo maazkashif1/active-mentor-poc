@@ -16,7 +16,7 @@ function devHost(): string {
 
 const BASE_URL = __DEV__
   ? `http://${devHost()}:3000/api`
-  : 'https://your-production-url.com/api';
+  : 'https://active-mentor-poc.onrender.com/api';
 
 if (__DEV__) console.log('[api] BASE_URL =', BASE_URL);
 
