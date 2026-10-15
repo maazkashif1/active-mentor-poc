@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform,
+  Alert, ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { login } from '../../services/authService';
@@ -33,8 +33,9 @@ export default function LoginScreen({ navigation }: Props) {
     <SafeAreaView style={s.safe}>
       <KeyboardAvoidingView
         style={s.kav}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
         <View style={s.container}>
           {/* Brand */}
           <View style={s.brand}>
@@ -84,13 +85,12 @@ export default function LoginScreen({ navigation }: Props) {
             </TouchableOpacity>
 
             <View style={s.switchRow}>
-              <Text style={s.switchText}>Don't have an account? </Text>
-              <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-                <Text style={s.switchLink}>Sign up</Text>
-              </TouchableOpacity>
+              <Text style={s.switchText}>New patient? Go back and tap </Text>
+              <Text style={s.switchLink}>Get Started</Text>
             </View>
           </View>
         </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -121,7 +121,8 @@ function Field({ label, value, onChange, placeholder, keyboardType }: {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#fff' },
   kav: { flex: 1 },
-  container: { flex: 1, paddingHorizontal: 23, justifyContent: 'center' },
+  scroll: { flexGrow: 1, justifyContent: 'center', paddingVertical: 40 },
+  container: { paddingHorizontal: 23 },
   brand: { marginBottom: 48 },
   brandLabel: {
     fontSize: 13, color: 'rgba(51,51,51,0.5)',

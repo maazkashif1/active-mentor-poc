@@ -10,8 +10,10 @@ const defaultConfig = getDefaultConfig(__dirname);
 
 const config = {
   resolver: {
-    // Bundle .tflite models as assets so require('...model.tflite') works.
     assetExts: [...defaultConfig.resolver.assetExts, 'tflite'],
+    // @react-native-community/blur uses a private RN internal path; disable
+    // strict package exports so Metro falls back to file-based resolution silently.
+    unstable_enablePackageExports: false,
   },
 };
 

@@ -7,7 +7,7 @@ const sessionSchema = new mongoose.Schema({
   slotTime: { type: String, required: true },
   status: {
     type: String,
-    enum: ['pending', 'active', 'summarised', 'approved'],
+    enum: ['pending', 'active', 'summarised', 'approved', 'missed'],
     default: 'pending',
   },
   complaints: { type: String, default: '' },

@@ -142,6 +142,19 @@ export default function SessionPage() {
           </p>
         </div>
 
+        {/* Join Meeting */}
+        {session?.meetingUrl && (
+          <a
+            href={session.meetingUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full rounded-xl border border-[#22c55e]/30 bg-[#22c55e]/10 px-5 py-4 text-[#22c55e] font-semibold hover:bg-[#22c55e]/20 transition-colors"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+            Join Google Meet
+          </a>
+        )}
+
         {/* Patient info */}
         {session?.patientId && (
           <section className="rounded-xl border border-white/10 bg-white/5 p-5 space-y-2">

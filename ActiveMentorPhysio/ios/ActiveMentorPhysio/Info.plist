@@ -36,7 +36,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Camera is used for exercise pose detection and video consultations.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string>Location is used to find physiologists near you.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Microphone is used during video consultations.</string>
 	<key>RCTNewArchEnabled</key>

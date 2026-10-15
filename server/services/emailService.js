@@ -4,15 +4,23 @@ const transporter = nodemailer.createTransport({
   host:   process.env.SMTP_HOST,
   port:   Number(process.env.SMTP_PORT) || 587,
   secure: process.env.SMTP_SECURE === 'true',
+  requireTLS: true,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
 });
 
+// verify on startup so SMTP misconfig surfaces immediately in logs
+transporter.verify().then(() => {
+  console.log('[SMTP] transporter ready:', process.env.SMTP_HOST, process.env.SMTP_USER);
+}).catch(err => {
+  console.error('[SMTP] transporter verify FAILED:', err.message);
+});
+
 async function sendOtpEmail(to, code) {
-  await transporter.sendMail({
-    from: `"Active Mentor" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+  const info = await transporter.sendMail({
+    from: process.env.SMTP_FROM || `"Active Mentor" <${process.env.SMTP_USER}>`,
     to,
     subject: 'Your Active Mentor verification code',
     text: `Your verification code is: ${code}\n\nThis code expires in 10 minutes.`,
@@ -27,6 +35,7 @@ async function sendOtpEmail(to, code) {
       </div>
     `,
   });
+  console.log('[SMTP] sent messageId:', info.messageId);
 }
 
 module.exports = { sendOtpEmail };

@@ -1,7 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, SafeAreaView,
-  TextInput, ActivityIndicator,
+  TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import OnboardingHeader from '../../components/OnboardingHeader';
@@ -18,14 +18,22 @@ export default function OTPScreen({ navigation, route }: Props) {
   const inputRef = useRef<any>(null);
   const email = (route.params as any)?.email ?? '';
 
+  useEffect(() => {
+    console.log('[OTPScreen] mount', { email });
+    return () => console.log('[OTPScreen] unmount');
+  }, []);
+
   const handleVerify = async () => {
     if (code.length < 6) return;
     setLoading(true);
     setError('');
+    console.log('[OTPScreen] verify-otp →', { email, code });
     try {
-      await api.post('/auth/verify-otp', { email, code });
+      const res = await api.post('/auth/verify-otp', { email, code });
+      console.log('[OTPScreen] verify-otp ✓', res.data);
       navigation.navigate('UserDetails', { email });
     } catch (e: any) {
+      console.log('[OTPScreen] verify-otp ✗', e?.response?.status, e?.response?.data);
       setError(e?.response?.data?.message || 'Invalid code. Try again.');
       setCode('');
     } finally {
@@ -37,11 +45,14 @@ export default function OTPScreen({ navigation, route }: Props) {
     setResending(true);
     setError('');
     setResent(false);
+    console.log('[OTPScreen] resend-otp →', { email });
     try {
-      await api.post('/auth/send-otp', { email });
+      const res = await api.post('/auth/send-otp', { email });
+      console.log('[OTPScreen] resend-otp ✓', res.data);
       setResent(true);
       setCode('');
     } catch (e: any) {
+      console.log('[OTPScreen] resend-otp ✗', e?.response?.status, e?.response?.data);
       setError('Could not resend. Try again.');
     } finally {
       setResending(false);
@@ -50,6 +61,8 @@ export default function OTPScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView style={s.safe}>
+      <KeyboardAvoidingView style={s.kav} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
       <View style={s.container}>
         <OnboardingHeader
           label="Verify your email"
@@ -105,12 +118,16 @@ export default function OTPScreen({ navigation, route }: Props) {
         </View>
         <Text style={s.footer}>Check your spam folder if you don't see it.</Text>
       </View>
+      </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
   safe:       { flex: 1, backgroundColor: '#fff' },
+  kav:        { flex: 1 },
+  scroll:     { flexGrow: 1 },
   container:  { flex: 1, backgroundColor: '#fff' },
   body:       { paddingHorizontal: 23, marginTop: 40 },
   otpRow:     { flexDirection: 'row', gap: 11, marginBottom: 16 },
@@ -140,7 +157,7 @@ const s = StyleSheet.create({
   resendText:     { fontSize: 14, color: '#333' },
   resendLink:     { fontSize: 14, color: '#333', textDecorationLine: 'underline' },
   footer: {
-    position: 'absolute', bottom: 40, left: 23, right: 23,
     fontSize: 12, color: '#333', textAlign: 'center',
+    marginTop: 32, paddingHorizontal: 23, paddingBottom: 40,
   },
 });

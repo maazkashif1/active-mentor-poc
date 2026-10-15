@@ -35,6 +35,9 @@ target 'ActiveMentorPhysio' do
     installer.pods_project.targets.each do |t|
       t.build_configurations.each do |c|
         c.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'
+        # Suppress warnings in pod dependencies — RN/Clang nullability noise
+        c.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+        c.build_settings['SWIFT_SUPPRESS_WARNINGS'] = 'YES'
       end
     end
   end

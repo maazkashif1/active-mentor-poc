@@ -112,9 +112,23 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
       {session.meetingUrl && (session.status === 'pending' || session.status === 'active') && (
         <TouchableOpacity
           style={s.joinBtn}
-          onPress={() => navigation.navigate('Meeting', { meetingUrl: session.meetingUrl })}>
+          onPress={() => navigation.navigate('Meeting', {
+            meetingUrl: session.meetingUrl,
+            physioName: session.physiologistId?.name,
+            slotDate: session.slotDate,
+            slotTime: session.slotTime,
+          })}>
           <Text style={s.joinBtnText}>Join Meeting</Text>
         </TouchableOpacity>
+      )}
+
+      {session.status === 'missed' && (
+        <View style={s.missedBanner}>
+          <Text style={s.missedText}>This appointment was missed.</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Booking' as any)}>
+            <Text style={s.rebookText}>Rebook →</Text>
+          </TouchableOpacity>
+        </View>
       )}
     </ScrollView>
   );
@@ -163,6 +177,13 @@ const s = StyleSheet.create({
   followUpSub: { color: '#888', fontSize: 12, marginTop: 2 },
   followUpBtn: { backgroundColor: '#22c55e', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
   followUpBtnText: { color: '#000', fontSize: 13, fontWeight: '600' },
-  joinBtn: { backgroundColor: '#4CAF50', borderRadius: 25, padding: 16, alignItems: 'center', marginTop: 32 },
+  joinBtn: { backgroundColor: '#1a73e8', borderRadius: 25, padding: 16, alignItems: 'center', marginTop: 32 },
   joinBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  missedBanner: {
+    marginTop: 32, backgroundColor: '#1a0a0a', borderRadius: 12, padding: 16,
+    borderWidth: 1, borderColor: '#CC222240', flexDirection: 'row',
+    justifyContent: 'space-between', alignItems: 'center',
+  },
+  missedText: { color: '#CC2222', fontSize: 14 },
+  rebookText: { color: '#EC9F05', fontSize: 14, fontWeight: '600' },
 });

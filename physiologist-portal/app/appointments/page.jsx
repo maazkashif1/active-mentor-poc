@@ -19,12 +19,14 @@ const STATUS_COLOR = {
   active:     '#EC9F05',
   summarised: '#5ba4cf',
   approved:   '#22c55e',
+  missed:     '#ef4444',
 };
 const STATUS_LABEL = {
   pending:    'Pending',
   active:     'Active',
   summarised: 'Awaiting Review',
   approved:   'Approved',
+  missed:     'Missed',
 };
 
 function AppointmentsInner() {
@@ -33,17 +35,22 @@ function AppointmentsInner() {
   const initStatus   = searchParams.get('status') || 'all';
   const initPatient  = searchParams.get('patient') || '';
 
-  const [sessions, setSessions] = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState('');
-  const [tab,      setTab]      = useState(initStatus);
-  const [search,   setSearch]   = useState('');
+  const [sessions,        setSessions]        = useState([]);
+  const [loading,         setLoading]         = useState(true);
+  const [error,           setError]           = useState('');
+  const [tab,             setTab]             = useState(initStatus);
+  const [search,          setSearch]          = useState('');
+  const [googleConnected, setGoogleConnected] = useState(true);
 
   useEffect(() => {
     if (!getToken()) { router.push('/login'); return; }
-    api.get('/api/sessions/physio')
-      .then(d => setSessions(Array.isArray(d) ? d : d.sessions || []))
-      .catch(e => setError(e.message))
+    Promise.all([
+      api.get('/api/sessions/physio'),
+      api.get('/api/users/profile').catch(() => null),
+    ]).then(([d, me]) => {
+      setSessions(Array.isArray(d) ? d : d.sessions || []);
+      if (me) setGoogleConnected(!!(me.googleTokens?.refreshToken));
+    }).catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
@@ -80,6 +87,17 @@ function AppointmentsInner() {
         </div>
 
         {error && <p className="text-red-400 mb-4 text-sm">{error}</p>}
+
+        {!googleConnected && (
+          <div className="flex items-center justify-between rounded-xl border border-[#EC9F05]/30 bg-[#EC9F05]/8 px-5 py-3 mb-5 gap-4">
+            <p className="text-sm text-[#EC9F05]">
+              <span className="font-semibold">Google Calendar not connected</span> — new bookings won&apos;t have a Google Meet link until you connect.
+            </p>
+            <a href="/profile" className="flex-shrink-0 px-4 py-1.5 rounded-lg bg-[#EC9F05] text-black text-xs font-semibold hover:bg-[#d18e04] transition-colors">
+              Connect now
+            </a>
+          </div>
+        )}
 
         {/* Tabs + search */}
         <div className="flex items-center justify-between mb-5 gap-4 flex-wrap">

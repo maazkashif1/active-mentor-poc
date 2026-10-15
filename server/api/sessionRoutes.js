@@ -7,6 +7,41 @@ const recallService = require('../services/recallService');
 
 const router = express.Router();
 
+function scheduledAt(s) {
+  const [y, m, d] = s.slotDate.split('-').map(Number);
+  const [h, min]  = s.slotTime.split(':').map(Number);
+  return new Date(y, m - 1, d, h, min);
+}
+
+const MISSED_WINDOW_MS = 90 * 60 * 1000;
+
+async function maybeActivate(sessions) {
+  const now = new Date();
+  const toActivate = [];
+  const toMiss = [];
+
+  for (const s of sessions) {
+    if (s.status === 'pending' || s.status === 'active') {
+      const start = scheduledAt(s);
+      const elapsed = now - start;
+      if (elapsed >= MISSED_WINDOW_MS && !s.transcriptText && s.status !== 'summarised') {
+        toMiss.push(s);
+      } else if (s.status === 'pending' && elapsed >= 0) {
+        toActivate.push(s);
+      }
+    }
+  }
+
+  if (toMiss.length) {
+    await Session.updateMany({ _id: { $in: toMiss.map(s => s._id) } }, { status: 'missed' });
+    toMiss.forEach(s => { s.status = 'missed'; });
+  }
+  if (toActivate.length) {
+    await Session.updateMany({ _id: { $in: toActivate.map(s => s._id) } }, { status: 'active' });
+    toActivate.forEach(s => { s.status = 'active'; });
+  }
+}
+
 router.post('/book', verifyToken, async (req, res) => {
   try {
     const { physiologistId, slotDate, slotTime, complaints } = req.body;
@@ -27,33 +62,42 @@ router.post('/book', verifyToken, async (req, res) => {
       complaints,
     });
 
-    // Try to create Google Meet
+    await Promise.all([session.save(), physio.save()]);
+
+    // Create Google Meet via Calendar if physio has connected Google
     if (physio.googleTokens?.refreshToken) {
       try {
-        const patient = await User.findById(req.user.id).select('email');
-        const start = new Date(`${slotDate}T${slotTime}`);
-        const end = new Date(start.getTime() + 60 * 60 * 1000);
+        const tokens = {
+          access_token: physio.googleTokens.accessToken,
+          refresh_token: physio.googleTokens.refreshToken,
+          expiry_date: physio.googleTokens.expiryDate,
+        };
+        const [year, month, day] = slotDate.split('-').map(Number);
+        const [hour, minute] = slotTime.split(':').map(Number);
+        const start = new Date(year, month - 1, day, hour, minute);
+        const end   = new Date(start.getTime() + 60 * 60 * 1000);
         const { meetingUrl, eventId, newTokens } = await calendarService.createMeeting({
-          tokens: physio.googleTokens,
-          summary: `Consultation: ${patient.email}`,
+          tokens,
+          summary: `Active Mentor Consultation — ${physio.name}`,
           startISO: start.toISOString(),
-          endISO: end.toISOString(),
-          attendeeEmails: [physio.email, patient.email],
+          endISO:   end.toISOString(),
+          attendeeEmails: [physio.email].filter(Boolean),
         });
         session.meetingUrl = meetingUrl;
-        session.eventId = eventId;
         if (newTokens) {
-          physio.googleTokens = { ...physio.googleTokens, ...newTokens };
+          await User.findByIdAndUpdate(physiologistId, {
+            googleTokens: {
+              accessToken:  newTokens.access_token,
+              refreshToken: newTokens.refresh_token ?? physio.googleTokens.refreshToken,
+              expiryDate:   newTokens.expiry_date,
+            },
+          });
         }
+        await session.save();
       } catch (e) {
-        console.error('Google Meet creation failed, using fallback:', e.message);
-        session.meetingUrl = `https://meet.jit.si/active-mentor-${session._id}`;
+        console.error('Google Meet creation failed:', e.message);
       }
-    } else {
-      session.meetingUrl = `https://meet.jit.si/active-mentor-${session._id}`;
     }
-
-    await Promise.all([session.save(), physio.save()]);
 
     // Spin up Recall bot non-blocking
     if (session.meetingUrl) {
@@ -74,6 +118,7 @@ router.get('/physio', verifyToken, async (req, res) => {
     const sessions = await Session.find({ physiologistId: req.user.id })
       .populate('patientId', 'name email')
       .sort({ createdAt: -1 });
+    await maybeActivate(sessions);
     res.json(sessions);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -85,6 +130,7 @@ router.get('/my', verifyToken, async (req, res) => {
     const sessions = await Session.find({ patientId: req.user.id })
       .populate('physiologistId', 'name email')
       .sort({ createdAt: -1 });
+    await maybeActivate(sessions);
     res.json(sessions);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -97,6 +143,7 @@ router.get('/:id', verifyToken, async (req, res) => {
       .populate('patientId', 'name email')
       .populate('physiologistId', 'name email');
     if (!session) return res.status(404).json({ message: 'Session not found' });
+    await maybeActivate([session]);
     res.json(session);
   } catch (err) {
     res.status(500).json({ message: err.message });

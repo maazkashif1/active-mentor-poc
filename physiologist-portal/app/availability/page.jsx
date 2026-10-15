@@ -19,6 +19,12 @@ function toMins(t) {
 function toTimeStr(mins) {
   return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
 }
+function to12h(t) {
+  let [h, m] = t.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${String(m).padStart(2, '0')} ${period}`;
+}
 
 function generateForPeriod({ workDays, startTime, endTime, duration, breakStart, breakEnd }) {
   const slots  = [];
@@ -111,7 +117,7 @@ function DayModal({ dateStr, daySlots, onClose, onDelete }) {
                   <span className={`tabular-nums text-sm font-medium ${
                     slot.isBooked ? 'text-[#EC9F05]' : 'text-white'
                   }`}>
-                    {slot.time}
+                    {to12h(slot.time)}
                   </span>
                   <span className={`text-[11px] px-1.5 py-0.5 rounded ${
                     slot.isBooked

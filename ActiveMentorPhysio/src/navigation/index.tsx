@@ -43,6 +43,7 @@ export default function RootNavigator() {
 
   useEffect(() => { init(); }, []);
 
+
   const signIn = useCallback((user?: any) => useAuthStore.getState().signIn(user), []);
   const signOut = useCallback(() => useAuthStore.getState().signOut(), []);
 

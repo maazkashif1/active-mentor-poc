@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, SafeAreaView,
-  TextInput, ActivityIndicator,
+  TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import OnboardingHeader from '../../components/OnboardingHeader';
@@ -18,14 +18,22 @@ export default function PhoneScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    console.log('[PhoneScreen] mount');
+    return () => console.log('[PhoneScreen] unmount');
+  }, []);
+
   const handleSend = async () => {
     if (!isValidEmail(email)) return;
     setLoading(true);
     setError('');
+    console.log('[PhoneScreen] send-otp →', email);
     try {
-      await api.post('/auth/send-otp', { email });
+      const res = await api.post('/auth/send-otp', { email });
+      console.log('[PhoneScreen] send-otp ✓', res.data);
       navigation.navigate('OTP', { email });
     } catch (e: any) {
+      console.log('[PhoneScreen] send-otp ✗', e?.response?.status, e?.response?.data);
       setError(e?.response?.data?.message || 'Could not send code. Try again.');
     } finally {
       setLoading(false);
@@ -34,51 +42,57 @@ export default function PhoneScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={s.safe}>
-      <View style={s.container}>
-        <OnboardingHeader
-          label="Create your account"
-          title="Let's get you set up"
-          subtitle="We'll send a 6-digit code to your email to verify it's you."
-          onBack={() => navigation.goBack()}
-        />
-        <View style={s.form}>
-          <Text style={s.inputLabel}>Email Address</Text>
-          <TextInput
-            style={s.input}
-            placeholder="you@example.com"
-            placeholderTextColor="rgba(51,51,51,0.2)"
-            value={email}
-            onChangeText={t => { setEmail(t.trim()); setError(''); }}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoFocus
+      <KeyboardAvoidingView
+        style={s.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+          <OnboardingHeader
+            label="Create your account"
+            title="Let's get you set up"
+            subtitle="We'll send a 6-digit code to your email to verify it's you."
+            onBack={() => navigation.goBack()}
           />
-          {error ? <Text style={s.error}>{error}</Text> : null}
-          <TouchableOpacity
-            style={[s.btn, !isValidEmail(email) && s.btnDisabled]}
-            onPress={handleSend}
-            disabled={loading || !isValidEmail(email)}
-          >
-            {loading
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={s.btnText}>Send Code</Text>}
-          </TouchableOpacity>
-        </View>
-        <Text style={s.footer}>
-          By continuing, you agree to ActiveMentor's{' '}
-          <Text style={s.footerLink}>Terms of Use</Text>
-          {' '}and{' '}
-          <Text style={s.footerLink}>Privacy Policy.</Text>
-        </Text>
-      </View>
+          <View style={s.form}>
+            <Text style={s.inputLabel}>Email Address</Text>
+            <TextInput
+              style={s.input}
+              placeholder="you@example.com"
+              placeholderTextColor="rgba(51,51,51,0.2)"
+              value={email}
+              onChangeText={t => { setEmail(t.trim()); setError(''); }}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus
+            />
+            {error ? <Text style={s.error}>{error}</Text> : null}
+            <TouchableOpacity
+              style={[s.btn, !isValidEmail(email) && s.btnDisabled]}
+              onPress={handleSend}
+              disabled={loading || !isValidEmail(email)}
+            >
+              {loading
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={s.btnText}>Send Code</Text>}
+            </TouchableOpacity>
+          </View>
+          <Text style={s.footer}>
+            By continuing, you agree to ActiveMentor's{' '}
+            <Text style={s.footerLink}>Terms of Use</Text>
+            {' '}and{' '}
+            <Text style={s.footerLink}>Privacy Policy.</Text>
+          </Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
   safe:       { flex: 1, backgroundColor: '#fff' },
-  container:  { flex: 1, backgroundColor: '#fff' },
+  kav:        { flex: 1 },
+  scroll:     { flexGrow: 1, paddingBottom: 40 },
   form:       { paddingHorizontal: 23, marginTop: 32 },
   inputLabel: { fontSize: 13, color: '#333', fontWeight: '500', marginBottom: 8 },
   input: {
@@ -97,8 +111,8 @@ const s = StyleSheet.create({
   btnDisabled: { opacity: 0.4 },
   btnText:    { color: '#fff', fontSize: 14, fontWeight: '500' },
   footer: {
-    position: 'absolute', bottom: 40, left: 23, right: 23,
     fontSize: 12, color: '#333', textAlign: 'center', lineHeight: 18,
+    marginTop: 32, paddingHorizontal: 23,
   },
   footerLink: { textDecorationLine: 'underline' },
 });

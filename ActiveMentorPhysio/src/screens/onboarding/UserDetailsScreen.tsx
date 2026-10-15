@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, SafeAreaView,
-  TextInput, ScrollView, ActivityIndicator,
+  TextInput, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
@@ -44,6 +44,7 @@ export default function UserDetailsScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView style={s.safe}>
+      <KeyboardAvoidingView style={s.kav} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
         <OnboardingHeader
           label="Your details"
@@ -83,6 +84,7 @@ export default function UserDetailsScreen({ navigation, route }: Props) {
         <Text style={s.footer}>Only the information your care team needs.</Text>
         <View style={{ height: 60 }} />
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -116,6 +118,7 @@ function Field({
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#fff' },
+  kav: { flex: 1 },
   scroll: { flex: 1, backgroundColor: '#fff' },
   scrollContent: { paddingBottom: 40 },
   form: { paddingHorizontal: 23, marginTop: 30, gap: 15 },

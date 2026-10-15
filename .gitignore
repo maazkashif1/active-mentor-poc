@@ -13,6 +13,7 @@ node_modules/
 ActiveMentorPhysio/ios/Pods/
 ActiveMentorPhysio/ios/build/
 ActiveMentorPhysio/ios/*.xcworkspace/xcuserdata/
+ActiveMentorPhysio/ios/GoogleService-Info.plist
 
 # Android
 ActiveMentorPhysio/android/.gradle/

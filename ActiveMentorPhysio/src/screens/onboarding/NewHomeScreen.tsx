@@ -3,6 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, SafeAreaView,
   ScrollView, ImageBackground, Image,
 } from 'react-native';
+import { BlurView } from '@react-native-community/blur';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../navigation';
@@ -57,14 +58,20 @@ export default function NewHomeScreen({ navigation }: Props) {
   const fetchPhysios = useAppStore(s => s.fetchPhysios);
 
   useEffect(() => {
+    console.log('[NewHomeScreen] mount');
     AsyncStorage.getItem('userProfile').then(v => {
       if (v) {
         const p = JSON.parse(v);
         setFirstName(p.firstName || '');
         setHasIntake(!!p.careArea);
+        console.log('[NewHomeScreen] profile loaded', { firstName: p.firstName, careArea: p.careArea });
       }
     });
-    if (!physios.length) fetchPhysios();
+    if (!physios.length) {
+      console.log('[NewHomeScreen] fetching physios');
+      fetchPhysios();
+    }
+    return () => console.log('[NewHomeScreen] unmount');
   }, []);
 
   const goToBooking = () => {
@@ -101,8 +108,10 @@ export default function NewHomeScreen({ navigation }: Props) {
               <Text style={s.headline}>Let's find the right{'\n'}physiotherapist for you.</Text>
             </View>
           </View>
-          <TouchableOpacity style={s.findBtn} onPress={() => goToBooking()}>
-            <Text style={s.findBtnText}>Find a Physiotherapist</Text>
+          <TouchableOpacity style={s.findBtnWrapper} onPress={() => goToBooking()} activeOpacity={0.85}>
+            <BlurView style={s.findBtn} blurType="light" blurAmount={18} reducedTransparencyFallbackColor="rgba(255,255,255,0.7)">
+              <Text style={s.findBtnText}>Find a Physiotherapist</Text>
+            </BlurView>
           </TouchableOpacity>
         </ImageBackground>
 
@@ -197,13 +206,13 @@ export default function NewHomeScreen({ navigation }: Props) {
               </TouchableOpacity>
             </View>
             {HOW_STEPS.map(step => (
-              <View key={step.num} style={s.howCard}>
+              <BlurView key={step.num} style={s.howCard} blurType="dark" blurAmount={8} reducedTransparencyFallbackColor="rgba(51,51,51,0.3)">
                 <View style={s.howCardLeft}>
                   <Text style={s.howCardTitle}>{step.title}</Text>
                   <Text style={s.howCardBody}>{step.body}</Text>
                 </View>
                 <Text style={s.howCardNum}>{step.num}</Text>
-              </View>
+              </BlurView>
             ))}
           </View>
         </ImageBackground>
@@ -214,11 +223,11 @@ export default function NewHomeScreen({ navigation }: Props) {
             <Text style={s.logoutText}>Log Out</Text>
           </TouchableOpacity>
         </View>
-        <View style={{ height: 100 }} />
+        <View style={{ height: 110 }} />
       </ScrollView>
 
-      {/* Bottom Tab Bar */}
-      <View style={s.tabBar}>
+      {/* Bottom Tab Bar — floats over scroll content */}
+      <BlurView style={s.tabBar} blurType="light" blurAmount={20} reducedTransparencyFallbackColor="#e0e7ef">
         {TAB_ITEMS.map((item) => (
           <TouchableOpacity
             key={item.label}
@@ -229,7 +238,7 @@ export default function NewHomeScreen({ navigation }: Props) {
             <Text style={[s.tabLabel, activeTab === item.label && s.tabLabelActive]}>{item.label}</Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </BlurView>
     </SafeAreaView>
   );
 }
@@ -249,11 +258,6 @@ const s = StyleSheet.create({
   heroSub: { gap: 4 },
   greet: { color: '#fff', fontSize: 14, fontWeight: '300', lineHeight: 20 },
   headline: { color: '#fff', fontSize: 24, fontWeight: '600', lineHeight: 30 },
-  findBtn: {
-    marginHorizontal: 24, marginTop: 16, marginBottom: 20,
-    backgroundColor: '#e0e7ef', borderRadius: 20,
-    height: 45, alignItems: 'center', justifyContent: 'center',
-  },
   findBtnText: { color: '#333', fontSize: 16, fontWeight: '300' },
 
   // Sections
@@ -297,8 +301,7 @@ const s = StyleSheet.create({
   howTitleMed: { fontWeight: '500' },
   howSub: { fontSize: 14, color: '#fff', fontWeight: '300', lineHeight: 20 },
   howCard: {
-    backgroundColor: 'rgba(51,51,51,0.15)',
-    borderRadius: 15, padding: 20,
+    borderRadius: 15, overflow: 'hidden', padding: 20,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   howCardLeft: { flex: 1, gap: 10, paddingRight: 16 },
@@ -314,11 +317,21 @@ const s = StyleSheet.create({
   },
   logoutText: { color: 'rgba(51,51,51,0.5)', fontSize: 14 },
 
-  // Bottom tab bar
+  // Find button
+  findBtnWrapper: {
+    marginHorizontal: 24, marginTop: 16, marginBottom: 20,
+    borderRadius: 20, overflow: 'hidden',
+  },
+  findBtn: {
+    height: 45, alignItems: 'center', justifyContent: 'center',
+  },
+
+  // Bottom tab bar — absolute, floats over scroll content
   tabBar: {
-    height: 70, backgroundColor: '#e0e7ef',
+    position: 'absolute', bottom: 10, left: 20, right: 20,
+    height: 70,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
-    borderRadius: 35, marginHorizontal: 20, marginBottom: 10,
+    borderRadius: 35, overflow: 'hidden',
     paddingHorizontal: 10,
     shadowColor: '#333', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08, shadowRadius: 10, elevation: 4,

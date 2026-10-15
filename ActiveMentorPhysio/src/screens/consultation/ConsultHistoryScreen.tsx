@@ -13,6 +13,7 @@ const STATUS_LABEL: Record<string, string> = {
   active: 'In Progress',
   summarised: 'Summary Ready',
   approved: 'Approved',
+  missed: 'Missed',
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -20,6 +21,7 @@ const STATUS_COLOR: Record<string, string> = {
   active: '#4CAF50',
   summarised: '#2196F3',
   approved: '#9C27B0',
+  missed: '#CC2222',
 };
 
 export default function ConsultHistoryScreen({ navigation }: Props) {
