@@ -37,6 +37,11 @@ export default function LoginScreen({ navigation }: Props) {
       >
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
         <View style={s.container}>
+          {/* Back button */}
+          <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
+            <Text style={s.backBtnText}>←</Text>
+          </TouchableOpacity>
+
           {/* Brand */}
           <View style={s.brand}>
             <Text style={s.brandLabel}>ACTIVE MENTOR</Text>
@@ -84,10 +89,10 @@ export default function LoginScreen({ navigation }: Props) {
                 : <Text style={s.btnText}>Log In</Text>}
             </TouchableOpacity>
 
-            <View style={s.switchRow}>
-              <Text style={s.switchText}>New patient? Go back and tap </Text>
-              <Text style={s.switchLink}>Get Started</Text>
-            </View>
+            <TouchableOpacity style={s.switchRow} onPress={() => navigation.goBack()}>
+              <Text style={s.switchText}>New patient? </Text>
+              <Text style={s.switchLink}>Go back ↗</Text>
+            </TouchableOpacity>
           </View>
         </View>
         </ScrollView>
@@ -123,6 +128,13 @@ const s = StyleSheet.create({
   kav: { flex: 1 },
   scroll: { flexGrow: 1, justifyContent: 'center', paddingVertical: 40 },
   container: { paddingHorizontal: 23 },
+  backBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(51,51,51,0.08)',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 32,
+  },
+  backBtnText: { fontSize: 18, color: '#333' },
   brand: { marginBottom: 48 },
   brandLabel: {
     fontSize: 13, color: 'rgba(51,51,51,0.5)',
