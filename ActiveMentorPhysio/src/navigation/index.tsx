@@ -21,6 +21,7 @@ import SignUpScreen from '../screens/auth/SignUpScreen';
 
 // Main app
 import BookingScreen from '../screens/consultation/BookingScreen';
+import DoctorProfileScreen from '../screens/consultation/DoctorProfileScreen';
 import ConsultHistoryScreen from '../screens/consultation/ConsultHistoryScreen';
 import SessionDetailScreen from '../screens/consultation/SessionDetailScreen';
 import MeetingScreen from '../screens/consultation/MeetingScreen';
@@ -66,6 +67,7 @@ export default function RootNavigator() {
               <Stack.Screen name="NewHome" component={NewHomeScreen}
                 options={{ gestureEnabled: false, animation: 'fade' }} />
               <Stack.Screen name="Booking" component={BookingScreen} />
+              <Stack.Screen name="DoctorProfile" component={DoctorProfileScreen} />
               <Stack.Screen name="ConsultHistory" component={ConsultHistoryScreen} />
               <Stack.Screen name="SessionDetail" component={SessionDetailScreen} />
               <Stack.Screen name="Meeting" component={MeetingScreen}

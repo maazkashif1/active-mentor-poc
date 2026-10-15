@@ -1,545 +1,449 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity, StyleSheet, Alert,
-  ActivityIndicator, TextInput, Image, ScrollView, SafeAreaView,
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Image,
+  TextInput,
+  StatusBar,
+  Dimensions,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { getSlots, bookSession } from '../../services/sessionService';
+import { RouteProp } from '@react-navigation/native';
 import { useAppStore } from '../../stores/appStore';
 
-type Props = { navigation: NativeStackNavigationProp<any> };
+type Props = {
+  navigation: NativeStackNavigationProp<any>;
+  route: RouteProp<{ Booking: { filter?: string } }, 'Booking'>;
+};
 
-function avatarUrl(name: string) {
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=DA7235&color=fff&size=256&bold=true`;
+const SW = Dimensions.get('window').width;
+const SCALE = SW / 390;
+const H_PAD = 24 * SCALE;
+const ACCENT = '#e0e7ef';
+const INK = '#333333';
+
+const font = (weight: 'Light' | 'Regular' | 'Medium' | 'SemiBold' | 'Bold') =>
+  Platform.select({
+    ios: `Poppins-${weight}`,
+    android: `Poppins-${weight}`,
+    default: undefined,
+  });
+
+const IMG = {
+  back: require('../../assets/images/figma/profile/icon_back.png'),
+  search: require('../../assets/images/figma/icon_search.png'),
+  arrow: require('../../assets/images/figma/icon_arrow_card.png'),
+  star: require('../../assets/images/figma/profile/icon_star.png'),
+  ahmed: require('../../assets/images/figma/physio_ahmed.png'),
+  sania: require('../../assets/images/figma/physio_sania.png'),
+};
+
+const PLACEHOLDERS = [IMG.ahmed, IMG.sania];
+
+export const FIND_FILTERS = [
+  'All',
+  'Nearest',
+  'Available Today',
+  'Knee Rehab',
+  'Elbow Care',
+  'Mobility Care',
+  'Shoulder Expert',
+] as const;
+
+export type FindFilter = (typeof FIND_FILTERS)[number];
+
+function normalizeFilter(raw?: string): FindFilter {
+  if (!raw) return 'All';
+  const hit = FIND_FILTERS.find(f => f.toLowerCase() === raw.toLowerCase());
+  if (hit) return hit;
+  const aliases: Record<string, FindFilter> = {
+    knee: 'Knee Rehab',
+    'knee rehabilitation': 'Knee Rehab',
+    elbow: 'Elbow Care',
+    mobility: 'Mobility Care',
+    shoulder: 'Shoulder Expert',
+    nearest: 'Nearest',
+    'available today': 'Available Today',
+  };
+  return aliases[raw.toLowerCase()] || 'All';
 }
 
-function parseTime(t: string): number {
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + m;
-}
-
-function to12h(t: string): string {
-  let [h, m] = t.split(':').map(Number);
-  const period = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  return `${h}:${String(m).padStart(2, '0')} ${period}`;
-}
-
-function isFuture(date: string, time: string): boolean {
-  const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
-  if (date > todayStr) return true;
-  if (date < todayStr) return false;
-  return parseTime(time) > now.getHours() * 60 + now.getMinutes();
-}
-
-function getPeriod(time: string): 'Morning' | 'Afternoon' | 'Evening' {
-  const h = parseInt(time.split(':')[0], 10);
-  if (h < 12) return 'Morning';
-  if (h < 17) return 'Afternoon';
-  return 'Evening';
-}
-
-function buildDateChips(slots: any[]): { isoDate: string; num: string; weekday: string }[] {
-  const seen = new Set<string>();
-  const chips: { isoDate: string; num: string; weekday: string }[] = [];
-  const sorted = [...slots].sort((a, b) => a.date.localeCompare(b.date));
-  for (const s of sorted) {
-    if (seen.has(s.date)) continue;
-    seen.add(s.date);
-    const d = new Date(s.date + 'T12:00:00');
-    chips.push({
-      isoDate: s.date,
-      num: String(d.getDate()),
-      weekday: d.toLocaleDateString('en-US', { weekday: 'short' }),
-    });
+function matchesFilter(p: any, filter: FindFilter, index: number): boolean {
+  if (filter === 'All') return true;
+  const spec = `${p.specialty || ''} ${p.specialization || ''} ${p.name || ''}`.toLowerCase();
+  if (filter === 'Knee Rehab') return spec.includes('knee') || spec.includes('sports');
+  if (filter === 'Elbow Care') return spec.includes('elbow') || spec.includes('arm') || spec.includes('upper');
+  if (filter === 'Mobility Care') {
+    return spec.includes('mobility') || spec.includes('musculo') || spec.includes('rehab');
   }
-  return chips.slice(0, 14);
+  if (filter === 'Shoulder Expert') return spec.includes('shoulder');
+  if (filter === 'Nearest') return true; // sorted later
+  if (filter === 'Available Today') return index % 2 === 0; // soft demo until API flag exists
+  return true;
 }
 
-// ── Physio list card ───────────────────────────────────────────────────────────
+function displayName(name: string) {
+  if (!name) return 'Physiotherapist';
+  return name.startsWith('Dr.') ? name : `Dr. ${name}`;
+}
 
-function PhysioListCard({ item, onPress }: { item: any; onPress: () => void }) {
-  const photo = item.photo || avatarUrl(item.name);
+function PhysioRow({
+  item,
+  index,
+  onPress,
+}: {
+  item: any;
+  index: number;
+  onPress: () => void;
+}) {
+  const photo = item.photo
+    ? { uri: item.photo }
+    : PLACEHOLDERS[index % PLACEHOLDERS.length];
+  const specialty = item.specialty || item.specialization || 'Physiotherapist';
+  const years = item.yearsExperience;
+  const rating = item.rating ?? (4.5 + (index % 4) * 0.1).toFixed(1);
+  const dist = item.distanceKm != null
+    ? `${item.distanceKm} km`
+    : `${(0.8 + index * 0.35).toFixed(1)} km`;
+
   return (
-    <TouchableOpacity style={lc.card} onPress={onPress} activeOpacity={0.85}>
-      <Image source={{ uri: photo }} style={lc.avatar} />
-      <View style={lc.info}>
-        <Text style={lc.name}>{item.name}</Text>
-        {item.specialty ? <Text style={lc.specialty}>{item.specialty}</Text> : null}
-        {item.yearsExperience != null && (
-          <Text style={lc.sub}>{item.yearsExperience} yrs experience</Text>
-        )}
+    <TouchableOpacity style={s.card} onPress={onPress} activeOpacity={0.88}>
+      <Image source={photo} style={s.avatar} resizeMode="cover" />
+      <View style={s.cardBody}>
+        <Text style={s.name} numberOfLines={1}>{displayName(item.name)}</Text>
+        <Text style={s.specialty} numberOfLines={1}>{specialty}</Text>
+        <View style={s.metaRow}>
+          <View style={s.ratingPill}>
+            <Image source={IMG.star} style={s.starIcon} resizeMode="contain" />
+            <Text style={s.metaText}>{rating}</Text>
+          </View>
+          <Text style={s.dot}>·</Text>
+          <Text style={s.metaText}>{dist}</Text>
+          {years != null && (
+            <>
+              <Text style={s.dot}>·</Text>
+              <Text style={s.metaText}>{years} yrs</Text>
+            </>
+          )}
+        </View>
       </View>
-      <Text style={lc.arrow}>›</Text>
+      <View style={s.arrowBtn}>
+        <Image source={IMG.arrow} style={s.arrowIcon} resizeMode="contain" />
+      </View>
     </TouchableOpacity>
   );
 }
 
-const lc = StyleSheet.create({
-  card: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 14,
-    marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 14,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
-    borderWidth: 1, borderColor: '#F0F0F5',
-  },
-  avatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#EEE' },
-  info: { flex: 1, gap: 3 },
-  name: { color: '#1A1A2E', fontSize: 15, fontWeight: '600' },
-  specialty: { color: '#7B7B9D', fontSize: 12 },
-  sub: { color: '#AAAABD', fontSize: 11, marginTop: 2 },
-  arrow: { color: '#AAAABD', fontSize: 22 },
-});
-
-// ── Doctor Profile view ────────────────────────────────────────────────────────
-
-function DoctorProfile({
-  physio, slots, loading, selectedDate, setSelectedDate,
-  selectedSlot, setSelectedSlot, complaints, setComplaints,
-  booking, onBack, onConfirm,
-}: {
-  physio: any; slots: any[]; loading: boolean;
-  selectedDate: string; setSelectedDate: (d: string) => void;
-  selectedSlot: any; setSelectedSlot: (s: any) => void;
-  complaints: string; setComplaints: (c: string) => void;
-  booking: boolean; onBack: () => void; onConfirm: () => void;
-}) {
-  console.log('[DoctorProfile] render', { physio: physio?.name, slots: slots.length, selectedDate, selectedSlot: selectedSlot?._id });
-
-  const photo = physio.photo || avatarUrl(physio.name);
-  const education = physio.education?.[0];
-  const degree = education?.degree || 'MBBS, MD';
-  const today = new Date().toISOString().split('T')[0];
-  const isAvailableToday = slots.some(s => s.date === today);
-
-  const dateChips = buildDateChips(slots);
-
-  const activeDate = selectedDate || dateChips[0]?.isoDate || '';
-  const slotsForDate = slots.filter(s => s.date === activeDate);
-
-  const periods: ('Morning' | 'Afternoon' | 'Evening')[] = ['Morning', 'Afternoon', 'Evening'];
-
-  return (
-    <SafeAreaView style={dp.safe}>
-      <ScrollView style={dp.scroll} contentContainerStyle={dp.content} showsVerticalScrollIndicator={false}>
-
-        {/* ── Hero header ── */}
-        <View style={dp.header}>
-          {/* Back + favourite */}
-          <View style={dp.topBar}>
-            <TouchableOpacity onPress={onBack} style={dp.topBtn}>
-              <Text style={dp.topBtnText}>←</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={dp.topBtn}>
-              <Text style={dp.topBtnText}>♡</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Doctor photo — right side */}
-          <Image source={{ uri: photo }} style={dp.heroPhoto} resizeMode="cover" />
-
-          {/* Info — left side */}
-          <View style={dp.heroInfo}>
-            <View style={dp.ratingRow}>
-              <Text style={dp.starIcon}>★</Text>
-              <Text style={dp.ratingVal}>4.6</Text>
-            </View>
-            <Text style={dp.doctorName}>Dr. {physio.name}</Text>
-            <Text style={dp.degree}>{degree}</Text>
-            {physio.specialty ? <Text style={dp.specialty}>{physio.specialty}</Text> : null}
-            {isAvailableToday && (
-              <View style={dp.availBadge}>
-                <View style={dp.availDot} />
-                <Text style={dp.availText}>Available Today</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Action row */}
-          <View style={dp.actionRow}>
-            <TouchableOpacity style={dp.detailsBtn}>
-              <Text style={dp.detailsBtnText}>Details</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={dp.iconBtn}><Text style={dp.iconBtnText}>📞</Text></TouchableOpacity>
-            <TouchableOpacity style={dp.iconBtn}><Text style={dp.iconBtnText}>💬</Text></TouchableOpacity>
-            <TouchableOpacity style={dp.iconBtn}><Text style={dp.iconBtnText}>🎥</Text></TouchableOpacity>
-          </View>
-        </View>
-
-        {/* ── Stats ── */}
-        <View style={dp.stats}>
-          <View style={dp.statItem}>
-            <Text style={dp.statVal}>{physio.yearsExperience ?? '—'}</Text>
-            <Text style={dp.statLabel}>Years{'\n'}Experience</Text>
-          </View>
-          <View style={dp.statDivider} />
-          <View style={dp.statItem}>
-            <Text style={dp.statVal}>3.5k+</Text>
-            <Text style={dp.statLabel}>Patients</Text>
-          </View>
-          <View style={dp.statDivider} />
-          <View style={dp.statItem}>
-            <Text style={dp.statVal}>1k+</Text>
-            <Text style={dp.statLabel}>Reviews</Text>
-          </View>
-        </View>
-
-        {/* ── Available At ── */}
-        <View style={dp.section}>
-          <Text style={dp.sectionLabel}>Available At</Text>
-          <Text style={dp.sectionHint}>Select one location</Text>
-          <View style={dp.hospitalRow}>
-            <View style={dp.hospitalInfo}>
-              <Text style={dp.hospitalName}>{physio.name}'s Clinic</Text>
-              {physio.specialty ? <Text style={dp.hospitalSub}>{physio.specialty}</Text> : null}
-            </View>
-            <View style={dp.radioSelected} />
-          </View>
-        </View>
-
-        {/* ── Select Date ── */}
-        <View style={dp.section}>
-          <View style={dp.sectionHeader}>
-            <View>
-              <Text style={dp.sectionLabel}>Select Date</Text>
-              <Text style={dp.sectionHint}>Only available dates are shown</Text>
-            </View>
-          </View>
-          {loading
-            ? <ActivityIndicator color="#1A1A2E" style={{ marginVertical: 12 }} />
-            : dateChips.length === 0
-              ? <Text style={dp.empty}>No available dates</Text>
-              : (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={dp.dateChips}>
-                  {dateChips.map(chip => {
-                    const active = chip.isoDate === (activeDate);
-                    return (
-                      <TouchableOpacity
-                        key={chip.isoDate}
-                        style={[dp.dateChip, active && dp.dateChipActive]}
-                        onPress={() => { setSelectedDate(chip.isoDate); setSelectedSlot(null); }}
-                      >
-                        <Text style={[dp.dateNum, active && dp.dateTextActive]}>{chip.num}</Text>
-                        <Text style={[dp.dateDay, active && dp.dateTextActive]}>{chip.weekday}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              )}
-        </View>
-
-        {/* ── Select Time ── */}
-        <View style={dp.section}>
-          <Text style={dp.sectionLabel}>Select Time</Text>
-          <Text style={dp.sectionHint}>Only available times are shown</Text>
-          {periods.map(period => {
-            const ps = slotsForDate.filter(s => getPeriod(s.time) === period);
-            if (!ps.length) return null;
-            return (
-              <View key={period} style={{ marginBottom: 12 }}>
-                <Text style={dp.periodLabel}>{period}</Text>
-                <View style={dp.chipRow}>
-                  {ps.map((slot: any) => {
-                    const active = selectedSlot?._id === slot._id;
-                    return (
-                      <TouchableOpacity
-                        key={slot._id}
-                        style={[dp.timeChip, active && dp.timeChipActive]}
-                        onPress={() => setSelectedSlot(slot)}
-                      >
-                        <Text style={[dp.timeChipText, active && dp.timeChipTextActive]}>{to12h(slot.time)}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            );
-          })}
-          {slotsForDate.length === 0 && !loading && (
-            <Text style={dp.empty}>No slots for this date</Text>
-          )}
-        </View>
-
-        {/* ── Complaints (shown once slot picked) ── */}
-        {selectedSlot && (
-          <View style={dp.section}>
-            <Text style={dp.sectionLabel}>Describe your concerns</Text>
-            <TextInput
-              style={dp.input}
-              placeholder="What brings you in today?"
-              placeholderTextColor="#AAAABD"
-              value={complaints}
-              onChangeText={setComplaints}
-              multiline
-            />
-          </View>
-        )}
-
-        <View style={{ height: 90 }} />
-      </ScrollView>
-
-      {/* ── Fixed Continue button ── */}
-      <View style={dp.fixedBottom}>
-        <TouchableOpacity
-          style={[dp.continueBtn, (!selectedSlot || !complaints.trim()) && dp.continueBtnDisabled]}
-          onPress={onConfirm}
-          disabled={!selectedSlot || !complaints.trim() || booking}
-          activeOpacity={0.85}
-        >
-          {booking
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={dp.continueBtnText}>Continue</Text>}
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
-  );
-}
-
-const HEADER_BG = '#EAEAF5';
-const dp = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
-  scroll: { flex: 1 },
-  content: { backgroundColor: '#fff' },
-
-  // Hero header
-  header: {
-    backgroundColor: HEADER_BG, minHeight: 300,
-    paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20,
-    overflow: 'hidden',
-  },
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  topBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff',
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
-  },
-  topBtnText: { fontSize: 18, color: '#1A1A2E' },
-
-  heroPhoto: {
-    position: 'absolute', right: 0, bottom: 0,
-    width: '58%', height: 280,
-  },
-
-  heroInfo: { width: '55%', gap: 6, paddingBottom: 16 },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  starIcon: { color: '#F5A623', fontSize: 14 },
-  ratingVal: { color: '#1A1A2E', fontSize: 14, fontWeight: '600' },
-  doctorName: { color: '#1A1A2E', fontSize: 22, fontWeight: '700', lineHeight: 28 },
-  degree: { color: '#7B7B9D', fontSize: 12 },
-  specialty: { color: '#7B7B9D', fontSize: 12 },
-  availBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: '#E6F9F0', borderRadius: 12,
-    paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start',
-  },
-  availDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#27AE60' },
-  availText: { color: '#27AE60', fontSize: 11, fontWeight: '600' },
-
-  actionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
-  detailsBtn: {
-    backgroundColor: '#1A1A2E', borderRadius: 20,
-    paddingHorizontal: 20, paddingVertical: 9,
-  },
-  detailsBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  iconBtn: {
-    width: 38, height: 38, borderRadius: 19, backgroundColor: '#fff',
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
-  },
-  iconBtnText: { fontSize: 16 },
-
-  // Stats
-  stats: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 20, paddingHorizontal: 24,
-    borderBottomWidth: 1, borderColor: '#F0F0F5',
-  },
-  statItem: { flex: 1, alignItems: 'center', gap: 4 },
-  statVal: { color: '#1A1A2E', fontSize: 16, fontWeight: '700' },
-  statLabel: { color: '#AAAABD', fontSize: 11, textAlign: 'center', lineHeight: 15 },
-  statDivider: { width: 1, height: 36, backgroundColor: '#F0F0F5' },
-
-  // Sections
-  section: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 4 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-  sectionLabel: { color: '#1A1A2E', fontSize: 15, fontWeight: '600', marginBottom: 2 },
-  sectionHint: { color: '#AAAABD', fontSize: 11, marginBottom: 12 },
-  empty: { color: '#AAAABD', fontSize: 13, marginTop: 8 },
-
-  // Hospital row
-  hospitalRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 14, paddingHorizontal: 16,
-    borderWidth: 1, borderColor: '#F0F0F5', borderRadius: 14,
-  },
-  hospitalInfo: { gap: 2 },
-  hospitalName: { color: '#1A1A2E', fontSize: 14, fontWeight: '500' },
-  hospitalSub: { color: '#AAAABD', fontSize: 11 },
-  radioSelected: {
-    width: 18, height: 18, borderRadius: 9,
-    borderWidth: 5, borderColor: '#1A1A2E',
-  },
-
-  // Date chips
-  dateChips: { gap: 8, paddingRight: 4 },
-  dateChip: {
-    width: 58, height: 70, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center', gap: 4,
-    borderWidth: 1, borderColor: '#F0F0F5', backgroundColor: '#FAFAFA',
-  },
-  dateChipActive: { backgroundColor: '#1A1A2E', borderColor: '#1A1A2E' },
-  dateNum: { color: '#1A1A2E', fontSize: 18, fontWeight: '700' },
-  dateDay: { color: '#AAAABD', fontSize: 11 },
-  dateTextActive: { color: '#fff' },
-
-  // Time chips
-  periodLabel: { color: '#AAAABD', fontSize: 12, marginBottom: 8 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  timeChip: {
-    borderRadius: 20, paddingVertical: 9, paddingHorizontal: 16,
-    borderWidth: 1, borderColor: '#F0F0F5', backgroundColor: '#FAFAFA',
-  },
-  timeChipActive: { backgroundColor: '#1A1A2E', borderColor: '#1A1A2E' },
-  timeChipText: { color: '#1A1A2E', fontSize: 13 },
-  timeChipTextActive: { color: '#fff', fontWeight: '600' },
-
-  // Complaints input
-  input: {
-    borderWidth: 1, borderColor: '#F0F0F5', borderRadius: 14,
-    padding: 14, fontSize: 14, color: '#1A1A2E',
-    minHeight: 80, textAlignVertical: 'top',
-  },
-
-  // Fixed bottom CTA
-  fixedBottom: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    padding: 20, paddingBottom: 30,
-    backgroundColor: '#fff',
-    borderTopWidth: 1, borderColor: '#F0F0F5',
-  },
-  continueBtn: {
-    backgroundColor: '#1A1A2E', borderRadius: 25,
-    height: 52, alignItems: 'center', justifyContent: 'center',
-  },
-  continueBtnDisabled: { opacity: 0.35 },
-  continueBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-});
-
-// ── Main screen ────────────────────────────────────────────────────────────────
-
-export default function BookingScreen({ navigation }: Props) {
+export default function BookingScreen({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
   const physios = useAppStore(s => s.physios);
-  const physiosLoading = useAppStore(s => s.loading.physios);
+  const loading = useAppStore(s => s.loading.physios);
   const fetchPhysios = useAppStore(s => s.fetchPhysios);
-  const [slots, setSlots] = useState<any[]>([]);
-  const [selectedPhysio, setSelectedPhysio] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-  const [booking, setBooking] = useState(false);
-  const [complaints, setComplaints] = useState('');
-  const [selectedSlot, setSelectedSlot] = useState<any>(null);
-  const [selectedDate, setSelectedDate] = useState('');
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<FindFilter>(() =>
+    normalizeFilter(route.params?.filter),
+  );
 
   useEffect(() => {
-    console.log('[BookingScreen] mount');
-    if (!physios.length) {
-      console.log('[BookingScreen] fetching physios');
-      fetchPhysios();
-    }
-    return () => console.log('[BookingScreen] unmount');
+    if (!physios.length) fetchPhysios();
   }, []);
 
-  const selectPhysio = async (physio: any) => {
-    console.log('[BookingScreen] physio selected', physio.name);
-    setSelectedPhysio(physio);
-    setSelectedSlot(null);
-    setSelectedDate('');
-    setComplaints('');
-    setLoading(true);
-    try {
-      const data = await getSlots(physio._id);
-      const filtered = data.filter((s: any) => !s.isBooked && isFuture(s.date, s.time));
-      console.log('[BookingScreen] slots loaded', filtered.length);
-      setSlots(filtered);
-    } catch (e) {
-      console.log('[BookingScreen] slots error', e);
-      Alert.alert('Could not load slots');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Pick up filter when navigating again with a new param
+  useEffect(() => {
+    if (route.params?.filter) setFilter(normalizeFilter(route.params.filter));
+  }, [route.params?.filter]);
 
-  const confirmBooking = async () => {
-    if (!selectedSlot || !complaints.trim()) {
-      return Alert.alert('Describe your concerns before booking');
-    }
-    console.log('[BookingScreen] booking →', { physio: selectedPhysio.name, date: selectedSlot.date, time: selectedSlot.time });
-    setBooking(true);
-    try {
-      await bookSession(selectedPhysio._id, selectedSlot.date, selectedSlot.time, complaints);
-      console.log('[BookingScreen] booking ✓');
-      Alert.alert('Booked!', 'Your session has been scheduled.', [
-        { text: 'OK', onPress: () => navigation.navigate('ConsultHistory') },
-      ]);
-    } catch (e: any) {
-      console.log('[BookingScreen] booking ✗', e?.response?.status, e?.response?.data);
-      Alert.alert('Booking failed', e?.response?.data?.message || e.message);
-    } finally {
-      setBooking(false);
-    }
-  };
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let list = physios
+      .map((p, i) => ({ p, i }))
+      .filter(({ p, i }) => {
+        const name = (p.name || '').toLowerCase();
+        const spec = (p.specialty || p.specialization || '').toLowerCase();
+        if (q && !name.includes(q) && !spec.includes(q)) return false;
+        return matchesFilter(p, filter, i);
+      });
 
-  // ── Physio list ──
-  if (!selectedPhysio) {
-    return (
-      <SafeAreaView style={fl.safe}>
-        <View style={fl.header}>
-          <Text style={fl.title}>Find a Physiotherapist</Text>
-          <Text style={fl.sub}>Choose a specialist to view their profile and book</Text>
+    if (filter === 'Nearest') {
+      list = [...list].sort((a, b) => a.i - b.i);
+    }
+
+    // If specialty filter yields nothing (API data sparse), fall back to all + query
+    if (
+      list.length === 0 &&
+      physios.length > 0 &&
+      ['Knee Rehab', 'Elbow Care', 'Mobility Care', 'Shoulder Expert'].includes(filter)
+    ) {
+      list = physios
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => {
+          if (!q) return true;
+          const name = (p.name || '').toLowerCase();
+          const spec = (p.specialty || p.specialization || '').toLowerCase();
+          return name.includes(q) || spec.includes(q);
+        });
+    }
+
+    return list.map(({ p }) => p);
+  }, [physios, query, filter]);
+
+  return (
+    <View style={[s.root, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" />
+
+      <View style={s.header}>
+        <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.85}>
+          <Image source={IMG.back} style={s.backIcon} resizeMode="contain" />
+        </TouchableOpacity>
+        <View style={s.headerText}>
+          <Text style={s.title}>
+            <Text style={s.titleMed}>Find</Text>
+            <Text style={s.titleLight}> a Physiotherapist</Text>
+          </Text>
+          <Text style={s.subtitle}>Search by name, specialty, or area</Text>
         </View>
-        {physiosLoading
-          ? <ActivityIndicator color="#1A1A2E" style={{ marginTop: 40 }} size="large" />
-          : (
-            <FlatList
-              data={physios}
-              keyExtractor={i => i._id}
-              renderItem={({ item }) => (
-                <PhysioListCard item={item} onPress={() => selectPhysio(item)} />
-              )}
-              contentContainerStyle={fl.list}
-              ListEmptyComponent={<Text style={fl.empty}>No physiotherapists available</Text>}
+      </View>
+
+      <View style={s.searchBar}>
+        <Image source={IMG.search} style={s.searchIcon} resizeMode="contain" />
+        <TextInput
+          style={s.searchInput}
+          placeholder="Search physiotherapist, clinic, or area..."
+          placeholderTextColor="rgba(51,51,51,0.4)"
+          value={query}
+          onChangeText={setQuery}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+          autoFocus={false}
+        />
+      </View>
+
+      <FlatList
+        horizontal
+        data={[...FIND_FILTERS]}
+        keyExtractor={f => f}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={s.chipRow}
+        style={s.chipList}
+        renderItem={({ item: f }) => {
+          const active = filter === f;
+          return (
+            <TouchableOpacity
+              style={[s.chip, active && s.chipActive]}
+              onPress={() => setFilter(f)}
+            >
+              <Text style={[s.chipText, active && s.chipTextActive]}>{f}</Text>
+            </TouchableOpacity>
+          );
+        }}
+      />
+
+      {loading && !physios.length ? (
+        <ActivityIndicator color={INK} style={{ marginTop: 48 }} size="large" />
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={i => i._id}
+          contentContainerStyle={[s.list, { paddingBottom: 32 + insets.bottom }]}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <Text style={s.count}>
+              {filtered.length} physiotherapist{filtered.length === 1 ? '' : 's'}
+              {filter !== 'All' ? ` · ${filter}` : ''}
+            </Text>
+          }
+          ListEmptyComponent={
+            <View style={s.emptyWrap}>
+              <Text style={s.emptyTitle}>No matches</Text>
+              <Text style={s.emptySub}>Try another name or clear your filters</Text>
+            </View>
+          }
+          renderItem={({ item, index }) => (
+            <PhysioRow
+              item={item}
+              index={index}
+              onPress={() => navigation.navigate('DoctorProfile' as any, { physio: item })}
             />
           )}
-      </SafeAreaView>
-    );
-  }
-
-  // ── Doctor profile ──
-  return (
-    <DoctorProfile
-      physio={selectedPhysio}
-      slots={slots}
-      loading={loading}
-      selectedDate={selectedDate}
-      setSelectedDate={setSelectedDate}
-      selectedSlot={selectedSlot}
-      setSelectedSlot={setSelectedSlot}
-      complaints={complaints}
-      setComplaints={setComplaints}
-      booking={booking}
-      onBack={() => setSelectedPhysio(null)}
-      onConfirm={confirmBooking}
-    />
+        />
+      )}
+    </View>
   );
 }
 
-const fl = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
-  header: { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 8 },
-  title: { color: '#1A1A2E', fontSize: 22, fontWeight: '700', marginBottom: 4 },
-  sub: { color: '#AAAABD', fontSize: 13 },
-  list: { paddingHorizontal: 20, paddingTop: 12 },
-  empty: { color: '#AAAABD', textAlign: 'center', marginTop: 40 },
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#fff' },
+
+  header: {
+    paddingHorizontal: H_PAD,
+    paddingTop: 12 * SCALE,
+    paddingBottom: 8 * SCALE,
+    gap: 16 * SCALE,
+  },
+  backBtn: {
+    width: 36 * SCALE,
+    height: 36 * SCALE,
+    borderRadius: 18 * SCALE,
+    backgroundColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backIcon: { width: 16 * SCALE, height: 16 * SCALE },
+  headerText: { gap: 4 * SCALE },
+  title: { color: INK },
+  titleMed: {
+    fontFamily: font('Medium'),
+    fontSize: 28 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
+  titleLight: {
+    fontFamily: font('Light'),
+    fontSize: 28 * SCALE,
+    fontWeight: '300',
+    color: INK,
+  },
+  subtitle: {
+    fontFamily: font('Light'),
+    fontSize: 13 * SCALE,
+    color: 'rgba(51,51,51,0.55)',
+  },
+
+  searchBar: {
+    marginHorizontal: H_PAD,
+    marginTop: 12 * SCALE,
+    height: 44 * SCALE,
+    borderRadius: 22 * SCALE,
+    backgroundColor: ACCENT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16 * SCALE,
+    gap: 10 * SCALE,
+  },
+  searchIcon: {
+    width: 14 * SCALE,
+    height: 14 * SCALE,
+    tintColor: INK,
+    opacity: 0.55,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: font('Light'),
+    fontSize: 13 * SCALE,
+    color: INK,
+    paddingVertical: 0,
+  },
+
+  chipList: { flexGrow: 0, marginTop: 14 * SCALE },
+  chipRow: {
+    paddingHorizontal: H_PAD,
+    gap: 8 * SCALE,
+  },
+  chip: {
+    paddingHorizontal: 12 * SCALE,
+    paddingVertical: 7 * SCALE,
+    borderRadius: 20,
+    backgroundColor: 'rgba(224,231,239,0.45)',
+  },
+  chipActive: { backgroundColor: ACCENT },
+  chipText: {
+    fontFamily: font('Light'),
+    fontSize: 11 * SCALE,
+    color: 'rgba(51,51,51,0.55)',
+  },
+  chipTextActive: {
+    fontFamily: font('Medium'),
+    fontWeight: '500',
+    color: INK,
+  },
+
+  list: {
+    paddingHorizontal: H_PAD,
+    paddingTop: 8 * SCALE,
+    gap: 12 * SCALE,
+  },
+  count: {
+    fontFamily: font('Light'),
+    fontSize: 12 * SCALE,
+    color: 'rgba(51,51,51,0.45)',
+    marginBottom: 4 * SCALE,
+  },
+
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f7f8fb',
+    borderRadius: 16,
+    padding: 12 * SCALE,
+    gap: 12 * SCALE,
+  },
+  avatar: {
+    width: 72 * SCALE,
+    height: 72 * SCALE,
+    borderRadius: 14,
+    backgroundColor: ACCENT,
+  },
+  cardBody: { flex: 1, gap: 3 * SCALE },
+  name: {
+    fontFamily: font('Medium'),
+    fontSize: 15 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
+  specialty: {
+    fontFamily: font('Light'),
+    fontSize: 11 * SCALE,
+    color: 'rgba(51,51,51,0.6)',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5 * SCALE,
+    marginTop: 4 * SCALE,
+  },
+  ratingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3 * SCALE,
+  },
+  starIcon: { width: 10 * SCALE, height: 10 * SCALE },
+  metaText: {
+    fontFamily: font('Medium'),
+    fontSize: 10 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
+  dot: {
+    fontFamily: font('Light'),
+    fontSize: 10 * SCALE,
+    color: 'rgba(51,51,51,0.35)',
+  },
+  arrowBtn: {
+    width: 28 * SCALE,
+    height: 28 * SCALE,
+    borderRadius: 14 * SCALE,
+    backgroundColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arrowIcon: { width: 12 * SCALE, height: 12 * SCALE },
+
+  emptyWrap: { alignItems: 'center', paddingTop: 56 * SCALE, gap: 6 * SCALE },
+  emptyTitle: {
+    fontFamily: font('Medium'),
+    fontSize: 16 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
+  emptySub: {
+    fontFamily: font('Light'),
+    fontSize: 13 * SCALE,
+    color: 'rgba(51,51,51,0.45)',
+  },
 });
