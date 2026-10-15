@@ -1,9 +1,12 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Nav from '../../components/Nav';
+import AppShell from '../../components/ui/AppShell';
+import PageHeader from '../../components/ui/PageHeader';
+import GlassCard from '../../components/ui/GlassCard';
+import ErrorState from '../../components/ui/ErrorState';
+import { ProfileSkeleton } from '../../components/ui/Skeletons';
 import { api, getToken, clearToken, setUserName } from '../../lib/api';
-import { SkProfileHero, SkSection } from '../../components/Skeleton';
 
 const SPECIALIZATIONS = [
   'Sports Physiotherapy', 'Musculoskeletal', 'Neurological', 'Orthopedic',
@@ -17,19 +20,18 @@ function initials(name) {
 
 export default function ProfilePage() {
   const router = useRouter();
-  const [loading,  setLoading]  = useState(true);
-  const [saving,   setSaving]   = useState(false);
-  const [error,    setError]    = useState('');
-  const [success,  setSuccess]  = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  // Fields
-  const [name,              setName]              = useState('');
-  const [email,             setEmail]             = useState('');
-  const [specialization,    setSpecialization]    = useState('');
-  const [yearsExp,          setYearsExp]          = useState('');
-  const [bio,               setBio]               = useState('');
-  const [education,         setEducation]         = useState([]);
-  const [googleConnected,   setGoogleConnected]   = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [specialization, setSpecialization] = useState('');
+  const [yearsExp, setYearsExp] = useState('');
+  const [bio, setBio] = useState('');
+  const [education, setEducation] = useState([]);
+  const [googleConnected, setGoogleConnected] = useState(false);
 
   useEffect(() => {
     if (!getToken()) { router.push('/login'); return; }
@@ -46,7 +48,7 @@ export default function ProfilePage() {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [router]);
 
   const addEdu = () => setEducation(prev => [...prev, { degree: '', institution: '', year: '' }]);
   const removeEdu = (i) => setEducation(prev => prev.filter((_, idx) => idx !== i));
@@ -73,217 +75,203 @@ export default function ProfilePage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex flex-col min-h-screen bg-[#111113]">
-        <Nav />
-        <main className="flex-1 p-6 max-w-3xl mx-auto w-full">
-          <SkProfileHero />
-          <div className="space-y-6">
-            <SkSection lines={3} />
-            <SkSection lines={2} />
-            <SkSection lines={4} />
-            <SkSection lines={3} />
-          </div>
-        </main>
-      </div>
-    );
-  }
+  const googleHref = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/api/auth/google?token=${getToken()}`;
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#111113]">
-      <Nav />
-      <main className="flex-1 p-6 max-w-3xl mx-auto w-full">
+    <AppShell>
+      <div className="profile-wrap">
+        <PageHeader title="Profile" subtitle="Your clinical profile" />
 
-        {/* Profile hero */}
-        <div className="flex items-center gap-5 mb-8">
-          <div className="w-16 h-16 rounded-full bg-[#DA7235]/20 border-2 border-[#DA7235]/40 flex items-center justify-center text-2xl font-bold text-[#DA7235] flex-shrink-0">
-            {initials(name)}
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-white">{name || '—'}</h1>
-            <p className="text-white/40 text-sm mt-0.5">{email}</p>
-            {specialization && (
-              <span className="mt-1.5 inline-block px-2.5 py-0.5 rounded-full text-xs bg-[#DA7235]/15 text-[#DA7235] border border-[#DA7235]/25">
-                {specialization}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-6">
-
-          {/* Basic info */}
-          <Section title="Basic information">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Full name" value={name} onChange={setName} placeholder="Dr. Jane Smith" />
-              <Field label="Email" value={email} disabled placeholder="" />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-              <div>
-                <label className="block text-xs text-white/40 mb-1.5">Years of experience</label>
-                <input
-                  type="number" min="0" max="60"
-                  value={yearsExp}
-                  onChange={e => setYearsExp(e.target.value)}
-                  placeholder="e.g. 8"
-                  className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2.5 text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-[#DA7235]"
-                />
+        {loading ? (
+          <GlassCard className="rise">
+            <ProfileSkeleton />
+          </GlassCard>
+        ) : (
+          <div className="stack">
+            <GlassCard className="rise">
+              <div className="profile-id">
+                <span className="avatar avatar-lg" aria-hidden="true">{initials(name)}</span>
+                <div>
+                  <h2>{name || '—'}</h2>
+                  <p className="page-sub">{email || 'No email on file'}</p>
+                  {specialization ? <span className="spec-pill">{specialization}</span> : null}
+                </div>
               </div>
-            </div>
-          </Section>
+            </GlassCard>
 
-          {/* Specialization */}
-          <Section title="Specialization">
-            <div className="flex flex-wrap gap-2">
-              {SPECIALIZATIONS.map(s => (
-                <button key={s} type="button"
-                  onClick={() => setSpecialization(prev => prev === s ? '' : s)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                    specialization === s
-                      ? 'bg-[#DA7235] border-[#DA7235] text-white'
-                      : 'border-white/10 text-white/50 hover:border-[#DA7235]/50 hover:text-white/70'
-                  }`}>
-                  {s}
-                </button>
-              ))}
-            </div>
-          </Section>
-
-          {/* Google Calendar integration */}
-          <Section title="Google Calendar">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-white/70">
-                  {googleConnected ? 'Google Calendar connected' : 'Connect your Google Calendar'}
-                </p>
-                <p className="text-xs text-white/30 mt-0.5">
-                  {googleConnected
-                    ? 'New appointments will automatically create Google Meet links and appear in your calendar.'
-                    : 'Let Active Mentor create Google Meet links and calendar events when patients book appointments.'}
-                </p>
+            <GlassCard className="rise" style={{ animationDelay: '40ms' }}>
+              <h2 className="card-title">Basic information</h2>
+              <div className="form-grid" style={{ marginTop: 16 }}>
+                <Field label="Full name" value={name} onChange={setName} placeholder="Dr. Jane Smith" />
+                <Field label="Email" value={email} disabled />
               </div>
-              <a
-                href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/api/auth/google?token=${getToken()}`}
-                className={`flex-shrink-0 ml-4 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  googleConnected
-                    ? 'border border-[#22c55e]/30 text-[#22c55e] hover:border-[#22c55e]/60'
-                    : 'bg-[#DA7235] text-white hover:bg-[#c5622a]'
-                }`}>
-                {googleConnected ? 'Reconnect' : 'Connect'}
-              </a>
-            </div>
-          </Section>
+              <div className="form-grid" style={{ marginTop: 16 }}>
+                <div>
+                  <label className="form-label" htmlFor="years-exp">Years of experience</label>
+                  <input
+                    id="years-exp"
+                    type="number"
+                    min="0"
+                    max="60"
+                    value={yearsExp}
+                    onChange={e => setYearsExp(e.target.value)}
+                    placeholder="e.g. 8"
+                    className="form-field"
+                  />
+                </div>
+              </div>
+            </GlassCard>
 
-          {/* Bio */}
-          <Section title="About you">
-            <textarea
-              value={bio}
-              onChange={e => setBio(e.target.value)}
-              rows={5}
-              placeholder="Describe your clinical approach, areas of focus, or what patients can expect working with you…"
-              className="w-full rounded-lg bg-white/5 border border-white/10 px-4 py-3 text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-[#DA7235] resize-none"
-            />
-          </Section>
-
-          {/* Education */}
-          <Section title="Education & credentials">
-            <div className="space-y-3">
-              {education.map((entry, i) => (
-                <div key={i} className="rounded-lg border border-white/8 p-4 relative">
-                  <button type="button" onClick={() => removeEdu(i)}
-                    className="absolute top-3 right-3 text-white/20 hover:text-red-400 transition-colors text-lg leading-none">
-                    ×
+            <GlassCard className="rise" style={{ animationDelay: '80ms' }}>
+              <h2 className="card-title">Specialization</h2>
+              <div className="chip-row" style={{ marginTop: 16 }} role="group" aria-label="Specialization">
+                {SPECIALIZATIONS.map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    className="chip-pick"
+                    aria-pressed={specialization === s}
+                    onClick={() => setSpecialization(prev => prev === s ? '' : s)}
+                  >
+                    {s}
                   </button>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="sm:col-span-3">
-                      <label className="block text-xs text-white/40 mb-1">Degree / Certification</label>
-                      <input type="text" value={entry.degree}
-                        placeholder="e.g. Bachelor of Physiotherapy"
-                        onChange={e => patchEdu(i, 'degree', e.target.value)}
-                        className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-[#DA7235]" />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs text-white/40 mb-1">Institution</label>
-                      <input type="text" value={entry.institution}
-                        placeholder="University or college"
-                        onChange={e => patchEdu(i, 'institution', e.target.value)}
-                        className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-[#DA7235]" />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-white/40 mb-1">Year</label>
-                      <input type="number" value={entry.year}
-                        placeholder="2018" min="1950" max="2030"
-                        onChange={e => patchEdu(i, 'year', e.target.value)}
-                        className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-[#DA7235]" />
+                ))}
+              </div>
+            </GlassCard>
+
+            <GlassCard className="rise" style={{ animationDelay: '120ms' }}>
+              <h2 className="card-title">Google Calendar</h2>
+              <div className="calendar-row" style={{ marginTop: 14 }}>
+                <div>
+                  <p style={{ margin: 0, fontWeight: 700 }}>
+                    {googleConnected ? 'Google Calendar connected' : 'Connect your Google Calendar'}
+                  </p>
+                  <p className="form-hint">
+                    {googleConnected
+                      ? 'New appointments will automatically create Google Meet links and appear in your calendar.'
+                      : 'Let Active Mentor create Google Meet links and calendar events when patients book appointments.'}
+                  </p>
+                </div>
+                <a href={googleHref} className={googleConnected ? 'btn-ghost' : 'btn-copper'}>
+                  {googleConnected ? 'Reconnect' : 'Connect'}
+                </a>
+              </div>
+            </GlassCard>
+
+            <GlassCard className="rise" style={{ animationDelay: '160ms' }}>
+              <h2 className="card-title">About you</h2>
+              <label className="sr-only" htmlFor="profile-bio">About you</label>
+              <textarea
+                id="profile-bio"
+                value={bio}
+                onChange={e => setBio(e.target.value)}
+                rows={5}
+                placeholder="Describe your clinical approach, areas of focus, or what patients can expect working with you…"
+                className="form-area"
+                style={{ marginTop: 16 }}
+              />
+            </GlassCard>
+
+            <GlassCard className="rise" style={{ animationDelay: '200ms' }}>
+              <h2 className="card-title">Education and credentials</h2>
+              <div className="stack" style={{ marginTop: 16, gap: 12 }}>
+                {education.length === 0 ? (
+                  <p className="form-hint" style={{ margin: 0 }}>No degrees or certifications yet.</p>
+                ) : education.map((entry, i) => (
+                  <div key={i} className="edu-card">
+                    <button type="button" className="edu-remove" onClick={() => removeEdu(i)} aria-label={`Remove credential ${i + 1}`}>
+                      ×
+                    </button>
+                    <div className="form-grid">
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label className="form-label" htmlFor={`degree-${i}`}>Degree / certification</label>
+                        <input
+                          id={`degree-${i}`}
+                          type="text"
+                          value={entry.degree}
+                          placeholder="e.g. Bachelor of Physiotherapy"
+                          onChange={e => patchEdu(i, 'degree', e.target.value)}
+                          className="form-field"
+                        />
+                      </div>
+                      <div>
+                        <label className="form-label" htmlFor={`school-${i}`}>Institution</label>
+                        <input
+                          id={`school-${i}`}
+                          type="text"
+                          value={entry.institution}
+                          placeholder="University or college"
+                          onChange={e => patchEdu(i, 'institution', e.target.value)}
+                          className="form-field"
+                        />
+                      </div>
+                      <div>
+                        <label className="form-label" htmlFor={`year-${i}`}>Year</label>
+                        <input
+                          id={`year-${i}`}
+                          type="number"
+                          value={entry.year}
+                          placeholder="2018"
+                          min="1950"
+                          max="2030"
+                          onChange={e => patchEdu(i, 'year', e.target.value)}
+                          className="form-field"
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-            <button type="button" onClick={addEdu}
-              className="mt-3 w-full py-2 rounded-lg border border-dashed border-white/15 text-white/35 hover:border-[#DA7235]/40 hover:text-[#DA7235] text-sm transition-colors">
-              + Add degree or certification
-            </button>
-          </Section>
-
-          {/* Danger zone */}
-          <Section title="Account">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-white/60">Sign out of the portal</p>
-                <p className="text-xs text-white/25 mt-0.5">You'll need to log in again to access your dashboard</p>
+                ))}
               </div>
-              <button
-                onClick={() => { clearToken(); window.location.href = '/login'; }}
-                className="px-4 py-2 rounded-lg border border-white/10 text-white/50 hover:text-white hover:border-white/30 text-sm transition-colors">
-                Log out
+              <button type="button" className="btn-dashed" onClick={addEdu}>
+                + Add degree or certification
               </button>
-            </div>
-          </Section>
+            </GlassCard>
 
-          {/* Save */}
-          {error   && <p className="text-red-400 text-sm">{error}</p>}
-          {success && <p className="text-[#22c55e] text-sm">{success}</p>}
+            <GlassCard className="rise" style={{ animationDelay: '240ms' }}>
+              <h2 className="card-title">Account</h2>
+              <div className="account-row" style={{ marginTop: 14 }}>
+                <div>
+                  <p style={{ margin: 0, fontWeight: 700 }}>Sign out of the portal</p>
+                  <p className="form-hint">You&apos;ll need to log in again to access your dashboard</p>
+                </div>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => { clearToken(); window.location.href = '/login'; }}
+                >
+                  Log out
+                </button>
+              </div>
+            </GlassCard>
 
-          <button onClick={handleSave} disabled={saving}
-            className="w-full py-3 rounded-lg bg-[#DA7235] text-white font-semibold hover:bg-[#c5622a] transition-colors disabled:opacity-50">
-            {saving ? 'Saving…' : 'Save changes'}
-          </button>
-        </div>
+            {error ? <ErrorState message={error} /> : null}
+            {success ? <p className="form-success" role="status">{success}</p> : null}
 
-        <div className="h-12" />
-      </main>
-    </div>
-  );
-}
-
-function Section({ title, children }) {
-  return (
-    <div className="rounded-xl border border-white/8 bg-white/[0.02] p-5">
-      <p className="text-xs text-white/35 uppercase tracking-wider mb-4">{title}</p>
-      {children}
-    </div>
+            <button type="button" className="btn-copper" onClick={handleSave} disabled={saving} style={{ alignSelf: 'flex-start' }}>
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
+        )}
+      </div>
+    </AppShell>
   );
 }
 
 function Field({ label, value, onChange, placeholder, disabled }) {
+  const id = label.toLowerCase().replace(/\s+/g, '-');
   return (
     <div>
-      <label className="block text-xs text-white/40 mb-1.5">{label}</label>
+      <label className="form-label" htmlFor={id}>{label}</label>
       <input
+        id={id}
         type="text"
         value={value}
         onChange={onChange ? e => onChange(e.target.value) : undefined}
         placeholder={placeholder}
         disabled={disabled}
-        className={`w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:border-[#DA7235] ${
-          disabled
-            ? 'bg-white/[0.02] border-white/5 text-white/30 cursor-not-allowed'
-            : 'bg-white/5 border-white/10 text-white placeholder:text-white/20'
-        }`}
+        className="form-field"
       />
-      {disabled && <p className="text-xs text-white/20 mt-1">Email cannot be changed here</p>}
+      {disabled && <p className="form-hint">Email cannot be changed here</p>}
     </div>
   );
 }
