@@ -1,80 +1,96 @@
 /**
- * seed.js — populate dev database with realistic mock data
- * Run: node seed.js  (from /server directory)
+ * seed.js — wipe + populate Mongo with test physios, patients, sessions, etc.
+ * Run from /server:  node seed.js
+ *
+ * Passwords are plain text here — User model pre-save hashes once.
+ * Slot times use 24h "HH:mm" to match portal + patient app.
  */
 
 require('dotenv').config();
 const mongoose = require('mongoose');
-const bcrypt   = require('bcryptjs');
 
-const User         = require('./models/userModel');
-const Session      = require('./models/sessionModel');
+const User = require('./models/userModel');
+const Session = require('./models/sessionModel');
 const Prescription = require('./models/prescriptionModel');
 const ExerciseResult = require('./models/exerciseResultModel');
+const ChatThread = require('./models/chatThreadModel');
+const ChatMessage = require('./models/chatMessageModel');
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+const PHYSIO_PW = 'Password123';
+const PATIENT_PW = 'Patient123';
+
+function todayISO() {
+  return new Date().toISOString().split('T')[0];
+}
 
 function dateOffset(days) {
-  const d = new Date('2026-10-15');
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
   d.setDate(d.getDate() + days);
   return d.toISOString().split('T')[0];
 }
 
-function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
-function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-function shuffle(arr) { return [...arr].sort(() => Math.random() - 0.5); }
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+function shuffle(arr) {
+  return [...arr].sort(() => Math.random() - 0.5);
+}
 
-const TIMES = ['09:00 AM','09:30 AM','10:00 AM','10:30 AM','11:00 AM',
-               '02:00 PM','02:30 PM','03:00 PM','03:30 PM','04:00 PM','05:00 PM'];
+const TIMES = [
+  '09:00', '09:30', '10:00', '10:30', '11:00',
+  '14:00', '14:30', '15:00', '15:30', '16:00', '17:00',
+];
 
-const CITIES = ['Lahore','Karachi','Islamabad','Rawalpindi','Faisalabad','Multan','Peshawar','Quetta'];
-const CARE_AREAS = ['knee','shoulder','elbow','wrist','ankle','back'];
+const CARE_AREAS = ['knee', 'shoulder', 'elbow', 'wrist', 'ankle', 'back'];
 
 const COMPLAINTS = {
   knee: [
-    'Sharp pain in right knee when bending. Swelling on the medial side. Worsens after walking.',
-    'Post ACL reconstruction rehab — 4 months post-op. Stiffness and reduced range of motion.',
-    'Knee pain after long runs. No swelling but clicking sensation. Pain rated 5/10.',
-    'Medial meniscus tear confirmed on MRI. Pain on stairs and squatting movements.',
+    'Sharp pain in right knee when bending. Swelling on the medial side.',
+    'Post ACL reconstruction rehab — 4 months post-op. Stiffness and reduced ROM.',
+    'Knee pain after long runs. Clicking sensation. Pain rated 5/10.',
+    'Medial meniscus tear confirmed on MRI. Pain on stairs and squatting.',
   ],
   shoulder: [
-    'Sharp pain in left shoulder when lifting arm above 90°. Started after gym session 3 weeks ago.',
-    'Rotator cuff repair — 6 weeks post-op. Limited abduction. Physiotherapy ordered by surgeon.',
-    'Frozen shoulder — restricted movement in all planes. Pain worse at night. Duration 4 months.',
-    'Shoulder impingement syndrome. Clicking and catching with overhead movements.',
+    'Sharp pain in left shoulder when lifting arm above 90°.',
+    'Rotator cuff repair — 6 weeks post-op. Limited abduction.',
+    'Frozen shoulder — restricted movement in all planes. Pain worse at night.',
+    'Shoulder impingement. Clicking with overhead movements.',
   ],
   elbow: [
-    'Lateral elbow pain — suspected tennis elbow. Pain with gripping and wrist extension.',
-    'Medial epicondylitis. Pain radiates down forearm. Occupation: plumber.',
-    'Post-fracture rehabilitation of distal humerus. ROM restricted to 60° flexion currently.',
-    'Elbow stiffness after prolonged immobilisation. Seeking manual therapy and exercise program.',
+    'Lateral elbow pain — suspected tennis elbow. Pain with gripping.',
+    'Medial epicondylitis. Pain radiates down forearm.',
+    'Post-fracture rehab of distal humerus. ROM restricted.',
+    'Elbow stiffness after prolonged immobilisation.',
   ],
   wrist: [
-    'Wrist pain after fall on outstretched hand. X-ray clear but persistent pain with loading.',
-    'Carpal tunnel syndrome — numbness in thumb, index and middle finger. Worse at night.',
-    'De Quervain tenosynovitis. Pain at base of thumb with gripping and pinching.',
-    'TFCC injury. Wrist pain with forearm rotation. MRI confirmed partial tear.',
+    'Wrist pain after fall on outstretched hand. X-ray clear.',
+    'Carpal tunnel — numbness in thumb, index and middle finger.',
+    'De Quervain tenosynovitis. Pain at base of thumb.',
+    'TFCC injury. Wrist pain with forearm rotation.',
   ],
   ankle: [
-    'Grade II lateral ankle sprain — 3 weeks ago. Bruising resolved but proprioception deficit.',
-    'Chronic ankle instability. Multiple sprains in past 2 years. Seeking strengthening program.',
-    'Post-fracture ankle rehabilitation. Cast removed 2 weeks ago. Significant stiffness.',
-    'Achilles tendinopathy — pain and stiffness in the morning. Recreational runner.',
+    'Grade II lateral ankle sprain — 3 weeks ago. Proprioception deficit.',
+    'Chronic ankle instability. Multiple sprains in past 2 years.',
+    'Post-fracture ankle rehab. Cast removed 2 weeks ago.',
+    'Achilles tendinopathy — morning pain and stiffness.',
   ],
   back: [
-    'Lower back pain — dull ache worse with sitting. Radiates to left buttock. Office worker.',
-    'L4/L5 disc herniation confirmed on MRI. Referred leg pain improving. Seeking rehab.',
-    'Post-spinal fusion L5/S1. 3 months post-op. Cleared for physiotherapy by neurosurgeon.',
-    'Non-specific lower back pain. Recurrent flares for 2 years. Looking for a long-term plan.',
+    'Lower back pain — dull ache worse with sitting. Radiates to left buttock.',
+    'L4/L5 disc herniation on MRI. Referred leg pain improving.',
+    'Post-spinal fusion L5/S1. 3 months post-op. Cleared for physio.',
+    'Non-specific lower back pain. Recurrent flares for 2 years.',
   ],
 };
 
-// Per-result exercise summaries (plain text — about performance, not clinical SOAP)
 const RESULT_SUMMARIES = [
-  'Patient demonstrates good effort with {reps}/{target} reps completed at {rom}% ROM. Consistency was {consistency}% across the session. Adaptive threshold adjustments were appropriate. Continue current program with gradual angle progression.',
-  'Session shows {reps} repetitions achieved with {rom}% ROM. Minor assisted compensation noted at {assisted}% of reps. Recommend focusing on eccentric control and ensuring full return to rest position between reps.',
-  'ROM at {rom}% of target with {consistency}% rep consistency — above expected benchmark for this stage of recovery. Patient tolerance good. Consider increasing target angle by 5° at next session.',
-  'Patient completed {reps} reps with {assisted}% assisted. ROM averaged {rom}%. Some fatigue compensation observed in later reps. Ice post-session recommended. Overall progress is tracking well.',
+  'Good effort with {reps}/{target} reps at {rom}% ROM. Consistency {consistency}%. Continue current program.',
+  '{reps} reps with {rom}% ROM. Assisted on {assisted}% of reps. Focus on eccentric control.',
+  'ROM {rom}% with {consistency}% consistency — above expected. Consider +5° next session.',
+  'Completed {reps} reps ({assisted}% assisted). ROM averaged {rom}%. Progress tracking well.',
 ];
 
 function resultSummary(reps, target, rom, consistency, assisted) {
@@ -84,149 +100,314 @@ function resultSummary(reps, target, rom, consistency, assisted) {
     .replace('{assisted}', assisted);
 }
 
-// Session-level SOAP summaries (stored as JSON)
 const SOAP_SUMMARIES = [
   {
-    S: 'Patient reports dull aching pain in the affected area, rated 4/10 at rest and 7/10 with active movement. Symptoms present for approximately 6 weeks with gradual onset. Reports morning stiffness lasting 20–30 minutes. Sleep disruption on the affected side noted.',
-    O: 'Active ROM 65% of expected normal. Passive ROM 80%. Strength testing 4−/5 against resistance. Mild tenderness on palpation of the primary muscle groups. No swelling or erythema. Posture shows compensatory elevation of the affected shoulder.',
-    A: 'Presentation consistent with subacute musculoskeletal strain with associated ROM deficit and mild strength impairment. Patient motivated and demonstrates adequate exercise tolerance for a progressive home program.',
-    P: 'Initiate hand raise protocol: 3 sets × 10 reps, pain-free range only. Progress target angle by 5° when consistency exceeds 85%. Apply ice 10 min post-exercise. Review in 7 days. Educate patient on posture correction during daily activities.',
+    S: 'Patient reports dull aching pain rated 4/10 at rest and 7/10 with movement. Morning stiffness 20–30 min.',
+    O: 'Active ROM 65%. Passive ROM 80%. Strength 4−/5. Mild tenderness. No swelling.',
+    A: 'Subacute musculoskeletal strain with ROM deficit. Motivated; good exercise tolerance.',
+    P: 'Hand raise 3×10 pain-free. Progress +5° when consistency >85%. Review in 7 days.',
   },
   {
-    S: 'Patient presents 8 weeks post-injury with ongoing pain (5/10 at rest, 8/10 during overhead activity). Reports significant improvement from initial presentation. Describes a "catching" sensation with specific arc of movement. No neurological symptoms.',
-    O: 'Full passive ROM achieved. Active ROM 75% with pain at end range. Isometric strength 4/5. Scapular stabilisation assessment reveals mild dyskinesis. Provocative tests positive for impingement. Gait and posture normal.',
-    A: 'Clinical findings suggest subacromial impingement with improving ROM trajectory. Scapular dyskinesis contributing to functional limitation. Patient compliant with previous advice. Good prognosis for full return to activity within 4–6 weeks.',
-    P: 'Progress to eccentric-focused hand raise 3 × 12 reps. Add scapular retraction exercises 2 × 15. Patient to continue home program twice daily. Avoid overhead reaching and lifting >3 kg until review. Next appointment in 10 days.',
+    S: '8 weeks post-injury. Pain 5/10 at rest, 8/10 overhead. Catching sensation in arc of movement.',
+    O: 'Full passive ROM. Active 75% with end-range pain. Strength 4/5. Positive impingement tests.',
+    A: 'Subacromial impingement improving. Scapular dyskinesis contributing. Good prognosis.',
+    P: 'Eccentric hand raise 3×12. Scapular retraction 2×15. Avoid overhead lift >3kg. Review 10 days.',
   },
   {
-    S: 'Patient is 4 months post-operative following ACL reconstruction. Reports intermittent swelling and aching (3/10) after prolonged activity. Confident in ADLs but anxious about return to sport. No incidents of giving way since surgery.',
-    O: 'Full passive ROM. Active flexion to 135°. Extension lag nil. Quad strength 4/5, hamstring 4+/5. Single leg squat shows mild valgus collapse at 30°. No joint effusion at rest. Incision well healed.',
-    A: 'Patient progressing well in post-operative rehabilitation. Quad deficit and valgus collapse under fatigue are primary impairments to address before return to sport criteria are met. Psychological readiness remains an important consideration.',
-    P: 'Continue progressive loading program. Initiate hand raise protocol to address upper extremity stability in parallel with lower limb work. Target 90% limb symmetry on functional testing before return to sport clearance. Review in 3 weeks.',
-  },
-  {
-    S: 'New patient presenting with 3-week history of lateral elbow and wrist pain. Onset after increased workload (occupation: desk-based). Rates pain 6/10 with typing and gripping. Denies trauma. Taking OTC analgesics with partial relief.',
-    O: 'Grip strength reduced 35% compared to unaffected side. Resisted wrist extension and forearm supination painful. Tenderness at lateral epicondyle on palpation. Full ROM preserved. Neural tension testing negative. No swelling.',
-    A: 'Clinical presentation consistent with lateral epicondylalgia. Likely overuse mechanism related to occupational demands. Patient has realistic expectations and good understanding of condition. Conservative management appropriate.',
-    P: 'Prescribe hand raise with eccentric emphasis: 3 × 8 reps with 3-second eccentric phase. Ergonomic review of workstation recommended. Load modification for 2 weeks. Advise relative rest from aggravating activities.',
-  },
-  {
-    S: 'Patient reports chronic lower back pain (VAS 5/10) worsening over 2 months. Radiates to left buttock but no leg pain or neurological symptoms. Morning stiffness approximately 40 minutes. Activity helps temporarily.',
-    O: 'Lumbar flexion 60% of normal. Extension mildly restricted. SLR negative bilaterally. Core and hip stabiliser strength 3+/5. No sensory or reflex changes. Postural assessment reveals anterior pelvic tilt and hyperlordosis.',
-    A: 'Non-specific chronic lower back pain with deconditioning and postural impairments. No red flags identified. Contributing factors include sedentary occupation, hip flexor tightness, and poor core activation.',
-    P: 'Begin graduated strengthening with hand raise protocol to establish movement patterns and confidence. 3 × 10 reps, neutral spine throughout. Add hip flexor stretch twice daily. Walking 20 min daily. Review in 2 weeks.',
+    S: '4 months post ACL reconstruction. Intermittent swelling after activity. No giving way.',
+    O: 'Full passive ROM. Flexion 135°. Quad 4/5. Mild valgus on single-leg squat. Incision healed.',
+    A: 'Progressing well. Quad deficit and valgus under fatigue are primary impairments.',
+    P: 'Continue progressive loading. Target 90% limb symmetry before RTS. Review in 3 weeks.',
   },
 ];
 
-// ── patient data ──────────────────────────────────────────────────────────────
+// ── Physios (portal login) ────────────────────────────────────────────────────
+
+const PHYSIOS = [
+  {
+    name: 'Dr. Ahmed Khan',
+    email: 'dr.ahmed.khan@yopmail.com',
+    specialty: 'Knee Specialist · Sports Injury',
+    yearsExperience: 12,
+    bio: 'Sports physio focused on ACL rehab and return-to-sport criteria. Camera-guided home programs between clinic visits.',
+    education: [
+      { degree: 'DPT', institution: 'King Edward Medical University', year: '2012' },
+      { degree: 'Sports Physiotherapy Cert.', institution: 'HCPC UK', year: '2016' },
+    ],
+    clinics: [
+      { name: 'Aga Khan University Hospital', branch: 'Garden Diagnostic Centre', address: 'Karachi', city: 'Karachi', logoKey: 'aga_khan', source: 'curated' },
+      { name: 'Active Mentor Sports Clinic', branch: 'Clifton', address: 'Karachi', city: 'Karachi', logoKey: '', source: 'manual' },
+    ],
+  },
+  {
+    name: 'Dr. Sania Ali',
+    email: 'dr.sania.ali@yopmail.com',
+    specialty: 'Shoulder Expert · Orthopedic',
+    yearsExperience: 9,
+    bio: 'Post-op shoulder and frozen shoulder specialist. Emphasises gradual ROM with remote form checks.',
+    education: [
+      { degree: 'BSPT', institution: 'Ziauddin University', year: '2014' },
+      { degree: 'Orthopedic Manual Therapy', institution: 'OMT Pakistan', year: '2018' },
+    ],
+    clinics: [
+      { name: 'Dr Ziauddin Hospital', branch: 'Clifton Campus', address: 'Karachi', city: 'Karachi', logoKey: 'ziauddin', source: 'curated' },
+    ],
+  },
+  {
+    name: 'Dr. Omar Farooq',
+    email: 'dr.omar.farooq@yopmail.com',
+    specialty: 'Musculoskeletal · Back Care',
+    yearsExperience: 15,
+    bio: 'Chronic low-back and disc rehab. Combines manual therapy with progressive loading programs.',
+    education: [{ degree: 'MSc Physiotherapy', institution: 'University of Lahore', year: '2009' }],
+    clinics: [
+      { name: 'Shaukat Khanum Memorial Cancer Hospital', branch: 'Johar Town', address: 'Lahore', city: 'Lahore', logoKey: 'shaukat_khanum', source: 'curated' },
+    ],
+  },
+  {
+    name: 'Dr. Fatima Sheikh',
+    email: 'dr.fatima.sheikh@yopmail.com',
+    specialty: "Women's Health · Post-Surgical Rehab",
+    yearsExperience: 8,
+    bio: 'Post-surgical and peri-natal musculoskeletal care with gentle, measurable progressions.',
+    education: [{ degree: 'DPT', institution: 'Riphah International University', year: '2015' }],
+    clinics: [
+      { name: 'National Hospital', branch: 'DHA Phase 5', address: 'Lahore', city: 'Lahore', logoKey: 'national_hospital', source: 'curated' },
+    ],
+  },
+  {
+    name: 'Dr. Hassan Malik',
+    email: 'dr.hassan.malik@yopmail.com',
+    specialty: 'Sports Physiotherapy · Knee Rehab',
+    yearsExperience: 11,
+    bio: 'Team sport injuries — ACL, meniscus, and patellofemoral pain. Return-to-play focused.',
+    education: [
+      { degree: 'DPT', institution: 'University of Health Sciences', year: '2013' },
+      { degree: 'CSCS', institution: 'NSCA', year: '2017' },
+    ],
+    clinics: [
+      { name: 'Services Hospital', branch: 'Jail Road', address: 'Lahore', city: 'Lahore', logoKey: 'services', source: 'curated' },
+    ],
+  },
+  {
+    name: 'Dr. Ayesha Nawaz',
+    email: 'dr.ayesha.nawaz@yopmail.com',
+    specialty: 'Neurological · Mobility Care',
+    yearsExperience: 10,
+    bio: 'Stroke and neuro rehab with emphasis on gait, balance, and home-based mobility drills.',
+    education: [{ degree: 'MS NPT', institution: 'Dow University', year: '2014' }],
+    clinics: [
+      { name: 'Aga Khan University Hospital', branch: 'Stadium Road', address: 'Karachi', city: 'Karachi', logoKey: 'aga_khan', source: 'curated' },
+    ],
+  },
+  {
+    name: 'Dr. Bilal Ahmad',
+    email: 'dr.bilal.ahmad@yopmail.com',
+    specialty: 'Elbow Care · Upper Limb',
+    yearsExperience: 7,
+    bio: 'Tennis/golfer’s elbow and post-fracture upper-limb rehab with grip and ROM tracking.',
+    education: [{ degree: 'DPT', institution: 'Isra University', year: '2016' }],
+    clinics: [
+      { name: 'PIMS', branch: 'G-8/3', address: 'Islamabad', city: 'Islamabad', logoKey: 'pims', source: 'curated' },
+    ],
+  },
+  {
+    name: 'Dr. Zara Hussain',
+    email: 'dr.zara.hussain@yopmail.com',
+    specialty: 'Pediatric · Musculoskeletal',
+    yearsExperience: 6,
+    bio: 'Adolescent sports injuries and growth-related MSK issues with family-friendly plans.',
+    education: [{ degree: 'DPT', institution: 'University of Karachi', year: '2018' }],
+    clinics: [
+      { name: 'South City Hospital', branch: 'Clifton', address: 'Karachi', city: 'Karachi', logoKey: 'south_city', source: 'curated' },
+    ],
+  },
+  {
+    name: 'Dr. Kamran Qureshi',
+    email: 'dr.kamran.qureshi@yopmail.com',
+    specialty: 'Pain Management · Orthopedic',
+    yearsExperience: 14,
+    bio: 'Chronic joint pain and graded exposure programs. Strong remote follow-up habit.',
+    education: [{ degree: 'MPhil PT', institution: 'King Edward Medical University', year: '2010' }],
+    clinics: [
+      { name: 'Services Hospital', branch: 'Jail Road', address: 'Lahore', city: 'Lahore', logoKey: 'services', source: 'curated' },
+    ],
+  },
+  {
+    name: 'Dr. Nadia Iqbal',
+    email: 'dr.nadia.iqbal@yopmail.com',
+    specialty: 'Ankle · Foot Rehab',
+    yearsExperience: 8,
+    bio: 'Ankle sprain, Achilles, and plantar issues. Proprioception and return-to-run protocols.',
+    education: [{ degree: 'DPT', institution: 'FMH College of Medicine', year: '2015' }],
+    clinics: [
+      { name: 'Doctors Hospital & Medical Center', branch: 'Johar Town', address: 'Lahore', city: 'Lahore', logoKey: 'doctors_hospital', source: 'curated' },
+    ],
+  },
+  {
+    name: 'Dr. Usman Baig',
+    email: 'dr.usman.baig@yopmail.com',
+    specialty: 'Cardiopulmonary · Geriatric',
+    yearsExperience: 13,
+    bio: 'Older-adult mobility and post-hospitalisation conditioning with safe home exercise.',
+    education: [{ degree: 'DPT', institution: 'Liaquat University', year: '2011' }],
+    clinics: [
+      { name: 'PIMS', branch: 'G-8/3', address: 'Islamabad', city: 'Islamabad', logoKey: 'pims', source: 'curated' },
+    ],
+  },
+  {
+    name: 'Dr. Maryam Raza',
+    email: 'dr.maryam.raza@yopmail.com',
+    specialty: 'Shoulder Expert · Post-Surgical Rehab',
+    yearsExperience: 9,
+    bio: 'Rotator cuff and labral post-op pathways with camera-checked home sessions.',
+    education: [
+      { degree: 'DPT', institution: 'Bahria University', year: '2014' },
+      { degree: 'Shoulder Fellowship', institution: 'AOSSM', year: '2019' },
+    ],
+    clinics: [
+      { name: 'Dr Ziauddin Hospital', branch: 'North Nazimabad', address: 'Karachi', city: 'Karachi', logoKey: 'ziauddin', source: 'curated' },
+    ],
+  },
+];
 
 const PATIENTS = [
-  { name: 'Asad Malik',      email: 'asad.malik@yopmail.com',      city: 'Lahore',      careArea: 'knee',     side: 'right' },
-  { name: 'Hina Baig',       email: 'hina.baig@yopmail.com',       city: 'Karachi',     careArea: 'shoulder', side: 'left'  },
-  { name: 'Tariq Hussain',   email: 'tariq.hussain@yopmail.com',   city: 'Islamabad',   careArea: 'back',     side: 'both'  },
-  { name: 'Amna Siddiqui',   email: 'amna.siddiqui@yopmail.com',   city: 'Lahore',      careArea: 'elbow',    side: 'right' },
-  { name: 'Yusuf Chaudhry',  email: 'yusuf.chaudhry@yopmail.com',  city: 'Rawalpindi',  careArea: 'knee',     side: 'left'  },
-  { name: 'Kiran Naz',       email: 'kiran.naz@yopmail.com',       city: 'Faisalabad',  careArea: 'wrist',    side: 'right' },
-  { name: 'Imran Zahid',     email: 'imran.zahid@yopmail.com',     city: 'Lahore',      careArea: 'shoulder', side: 'right' },
-  { name: 'Sara Rehman',     email: 'sara.rehman@yopmail.com',     city: 'Karachi',     careArea: 'ankle',    side: 'left'  },
-  { name: 'Adeel Qureshi',   email: 'adeel.qureshi@yopmail.com',   city: 'Islamabad',   careArea: 'back',     side: 'both'  },
-  { name: 'Meera Patel',     email: 'meera.patel@yopmail.com',     city: 'Karachi',     careArea: 'knee',     side: 'right' },
-  { name: 'Faisal Abbas',    email: 'faisal.abbas@yopmail.com',    city: 'Multan',      careArea: 'elbow',    side: 'left'  },
-  { name: 'Zainab Khan',     email: 'zainab.khan@yopmail.com',     city: 'Lahore',      careArea: 'shoulder', side: 'left'  },
-  { name: 'Hamza Farhan',    email: 'hamza.farhan@yopmail.com',    city: 'Peshawar',    careArea: 'knee',     side: 'both'  },
-  { name: 'Layla Ahmed',     email: 'layla.ahmed@yopmail.com',     city: 'Islamabad',   careArea: 'wrist',    side: 'left'  },
-  { name: 'Nadia Butt',      email: 'nadia.butt@yopmail.com',      city: 'Rawalpindi',  careArea: 'ankle',    side: 'right' },
-  { name: 'Ali Hassan',      email: 'ali.hassan@yopmail.com',      city: 'Lahore',      careArea: 'back',     side: 'both'  },
-  { name: 'Sofia Mirza',     email: 'sofia.mirza@yopmail.com',     city: 'Karachi',     careArea: 'shoulder', side: 'right' },
-  { name: 'Usman Tariq',     email: 'usman.tariq@yopmail.com',     city: 'Islamabad',   careArea: 'knee',     side: 'left'  },
-  { name: 'Bilal Chishti',   email: 'bilal.chishti@yopmail.com',   city: 'Faisalabad',  careArea: 'elbow',    side: 'right' },
-  { name: 'Mariam Yousaf',   email: 'mariam.yousaf@yopmail.com',   city: 'Quetta',      careArea: 'ankle',    side: 'both'  },
+  { name: 'Asad Malik', email: 'asad.malik@yopmail.com', city: 'Lahore', careArea: 'knee', side: 'right' },
+  { name: 'Hina Baig', email: 'hina.baig@yopmail.com', city: 'Karachi', careArea: 'shoulder', side: 'left' },
+  { name: 'Tariq Hussain', email: 'tariq.hussain@yopmail.com', city: 'Islamabad', careArea: 'back', side: 'both' },
+  { name: 'Amna Siddiqui', email: 'amna.siddiqui@yopmail.com', city: 'Lahore', careArea: 'elbow', side: 'right' },
+  { name: 'Yusuf Chaudhry', email: 'yusuf.chaudhry@yopmail.com', city: 'Rawalpindi', careArea: 'knee', side: 'left' },
+  { name: 'Kiran Naz', email: 'kiran.naz@yopmail.com', city: 'Faisalabad', careArea: 'wrist', side: 'right' },
+  { name: 'Imran Zahid', email: 'imran.zahid@yopmail.com', city: 'Lahore', careArea: 'shoulder', side: 'right' },
+  { name: 'Sara Rehman', email: 'sara.rehman@yopmail.com', city: 'Karachi', careArea: 'ankle', side: 'left' },
+  { name: 'Adeel Qureshi', email: 'adeel.qureshi@yopmail.com', city: 'Islamabad', careArea: 'back', side: 'both' },
+  { name: 'Meera Patel', email: 'meera.patel@yopmail.com', city: 'Karachi', careArea: 'knee', side: 'right' },
+  { name: 'Faisal Abbas', email: 'faisal.abbas@yopmail.com', city: 'Multan', careArea: 'elbow', side: 'left' },
+  { name: 'Zainab Khan', email: 'zainab.khan@yopmail.com', city: 'Lahore', careArea: 'shoulder', side: 'left' },
+  { name: 'Hamza Farhan', email: 'hamza.farhan@yopmail.com', city: 'Peshawar', careArea: 'knee', side: 'both' },
+  { name: 'Layla Ahmed', email: 'layla.ahmed@yopmail.com', city: 'Islamabad', careArea: 'wrist', side: 'left' },
+  { name: 'Nadia Butt', email: 'nadia.butt@yopmail.com', city: 'Rawalpindi', careArea: 'ankle', side: 'right' },
+  { name: 'Ali Hassan', email: 'ali.hassan@yopmail.com', city: 'Lahore', careArea: 'back', side: 'both' },
+  { name: 'Sofia Mirza', email: 'sofia.mirza@yopmail.com', city: 'Karachi', careArea: 'shoulder', side: 'right' },
+  { name: 'Usman Tariq', email: 'usman.tariq@yopmail.com', city: 'Islamabad', careArea: 'knee', side: 'left' },
+  { name: 'Bilal Chishti', email: 'bilal.chishti@yopmail.com', city: 'Faisalabad', careArea: 'elbow', side: 'right' },
+  { name: 'Mariam Yousaf', email: 'mariam.yousaf@yopmail.com', city: 'Quetta', careArea: 'ankle', side: 'both' },
 ];
 
-// ── main ──────────────────────────────────────────────────────────────────────
+function buildAvailability() {
+  const slots = [];
+  for (let d = 0; d <= 21; d++) {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() + d);
+    if (date.getDay() === 0) continue; // skip Sundays
+    const dateStr = date.toISOString().split('T')[0];
+    const dayTimes = shuffle(TIMES).slice(0, randInt(4, 6));
+    for (const time of dayTimes) {
+      slots.push({ date: dateStr, time, isBooked: false });
+    }
+  }
+  return slots;
+}
 
 async function run() {
+  if (!process.env.MONGO_URI) {
+    console.error('MONGO_URI missing in server/.env');
+    process.exit(1);
+  }
+
   await mongoose.connect(process.env.MONGO_URI);
   console.log('Connected to MongoDB');
+  console.log(`Anchor date: ${todayISO()}`);
 
-  const patientPassword = await bcrypt.hash('Patient123', 10);
+  // ── 0. Full wipe (test DB) ──────────────────────────────────────────────────
+  console.log('\n── Wiping collections ──');
+  const wiped = await Promise.all([
+    ChatMessage.deleteMany({}),
+    ChatThread.deleteMany({}),
+    ExerciseResult.deleteMany({}),
+    Prescription.deleteMany({}),
+    Session.deleteMany({}),
+    User.deleteMany({}),
+  ]);
+  console.log('  cleared messages, threads, results, prescriptions, sessions, users');
+  console.log(`  delete counts:`, wiped.map(r => r.deletedCount));
 
-  // ── 1. Upsert patients ──────────────────────────────────────────────────────
+  // ── 1. Physios ──────────────────────────────────────────────────────────────
+  console.log('\n── Creating physiologists ──');
+  const physioDocs = [];
+  for (const p of PHYSIOS) {
+    const doc = await User.create({
+      name: p.name,
+      email: p.email,
+      password: PHYSIO_PW, // hashed once by pre-save
+      role: 'physiologist',
+      specialty: p.specialty,
+      yearsExperience: p.yearsExperience,
+      bio: p.bio,
+      education: p.education,
+      clinics: p.clinics,
+      photo: '',
+      schedule: {
+        workDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+        startTime: '09:00',
+        endTime: '17:00',
+        breakStart: '13:00',
+        breakEnd: '14:00',
+        duration: 30,
+      },
+      availability: buildAvailability(),
+    });
+    physioDocs.push(doc);
+    console.log(`  + ${p.name}  (${p.specialty})  slots=${doc.availability.length}`);
+  }
+
+  // ── 2. Patients ─────────────────────────────────────────────────────────────
   console.log('\n── Creating patients ──');
   const patientDocs = [];
   for (const p of PATIENTS) {
-    const existing = await User.findOne({ email: p.email });
-    if (existing) {
-      patientDocs.push(existing);
-      console.log(`  skip  ${p.name} (exists)`);
-      continue;
-    }
-    const dob = `${randInt(1975, 2000)}-${String(randInt(1,12)).padStart(2,'0')}-${String(randInt(1,28)).padStart(2,'0')}`;
+    const dob = `${randInt(1975, 2000)}-${String(randInt(1, 12)).padStart(2, '0')}-${String(randInt(1, 28)).padStart(2, '0')}`;
     const doc = await User.create({
-      name: p.name, email: p.email, password: patientPassword, role: 'patient',
+      name: p.name,
+      email: p.email,
+      password: PATIENT_PW,
+      role: 'patient',
       firstName: p.name.split(' ')[0],
-      dob, city: p.city, careArea: p.careArea, side: p.side,
+      dob,
+      city: p.city,
+      careArea: p.careArea,
+      side: p.side,
       onboardingAnswers: ['Yes', 'Mild', 'No', 'Sometimes'],
     });
     patientDocs.push(doc);
-    console.log(`  created ${p.name}`);
+    console.log(`  + ${p.name}`);
   }
 
-  // ── 2. Load physios ──────────────────────────────────────────────────────────
-  const physios = await User.find({ role: 'physiologist' });
-  console.log(`\n── Found ${physios.length} physiologists ──`);
-
-  // ── 3. Add future slots to physios ──────────────────────────────────────────
-  console.log('\n── Adding future slots ──');
-  for (const physio of physios) {
-    const newSlots = [];
-    for (let d = 1; d <= 14; d++) {
-      if (d % 7 === 0) continue; // skip Sundays-ish
-      const date = dateOffset(d);
-      // 3-4 slots per day
-      const dayTimes = shuffle(TIMES).slice(0, randInt(3,4));
-      for (const time of dayTimes) {
-        const alreadyExists = physio.availability.some(s => s.date === date && s.time === time);
-        if (!alreadyExists) newSlots.push({ date, time, isBooked: false });
-      }
-    }
-    if (newSlots.length) {
-      physio.availability.push(...newSlots);
-      await physio.save();
-      console.log(`  ${physio.name}: +${newSlots.length} slots`);
-    }
-  }
-
-  // ── 4. Create sessions ───────────────────────────────────────────────────────
+  // ── 3. Sessions ─────────────────────────────────────────────────────────────
   console.log('\n── Creating sessions ──');
-  // Delete existing seeded sessions to keep things clean on re-run
-  await Session.deleteMany({ complaints: /seeded/i });
-
   const sessionDocs = [];
 
-  // For each physio, create 5-8 sessions across the last 14 days
-  for (const physio of physios) {
+  for (const physio of physioDocs) {
     const numSessions = randInt(5, 8);
-    const assignedPatients = shuffle(patientDocs).slice(0, numSessions);
+    const assigned = shuffle(patientDocs).slice(0, numSessions);
 
     for (let i = 0; i < numSessions; i++) {
-      const patient = assignedPatients[i];
-      const daysBack = randInt(1, 14);
+      const patient = assigned[i];
+      const daysBack = randInt(0, 14);
       const slotDate = dateOffset(-daysBack);
       const slotTime = pick(TIMES);
-
-      // Status distribution: 50% approved, 30% summarised, 20% pending
       const r = Math.random();
       const status = r < 0.5 ? 'approved' : r < 0.8 ? 'summarised' : 'pending';
-
       const careArea = patient.careArea || pick(CARE_AREAS);
-      const complaint = pick(COMPLAINTS[careArea] || COMPLAINTS.shoulder);
-
+      const complaint = `[seeded] ${pick(COMPLAINTS[careArea] || COMPLAINTS.shoulder)}`;
       const hasSoap = status === 'approved' || status === 'summarised';
+
       const session = await Session.create({
-        patientId:       patient._id,
-        physiologistId:  physio._id,
-        slotDate, slotTime, status,
+        patientId: patient._id,
+        physiologistId: physio._id,
+        slotDate,
+        slotTime,
+        status,
         complaints: complaint,
         aiSummary: hasSoap ? JSON.stringify(pick(SOAP_SUMMARIES)) : '',
       });
@@ -235,31 +416,41 @@ async function run() {
     console.log(`  ${physio.name}: ${numSessions} sessions`);
   }
 
-  // ── 5. Create prescriptions + results for approved sessions ──────────────────
-  console.log('\n── Creating prescriptions & exercise results ──');
+  // Mark a few upcoming slots booked for realism
+  for (const { session, physio } of sessionDocs.filter(s => s.status === 'pending').slice(0, 12)) {
+    const slot = physio.availability.find(s => !s.isBooked);
+    if (slot) {
+      slot.isBooked = true;
+      session.slotDate = slot.date;
+      session.slotTime = slot.time;
+      await session.save();
+    }
+  }
+  for (const p of physioDocs) await p.save();
 
+  // ── 4. Prescriptions + results ──────────────────────────────────────────────
+  console.log('\n── Creating prescriptions & results ──');
   const approved = sessionDocs.filter(s => s.status === 'approved');
-  let presCount = 0, resultCount = 0;
+  let presCount = 0;
+  let resultCount = 0;
 
   for (const { session, patient, careArea } of approved) {
     const targetReps = pick([8, 10, 12, 15]);
     const raiseAngle = randInt(70, 120);
     const lowerAngle = randInt(20, 35);
-    const notes = `${careArea.charAt(0).toUpperCase() + careArea.slice(1)} rehabilitation protocol. Focus on controlled movement and pain-free range. Rest between sets.`;
 
     const prescription = await Prescription.create({
-      sessionId:          session._id,
-      patientId:          patient._id,
-      physiologistId:     session.physiologistId,
-      exerciseId:         'hand_raise',
+      sessionId: session._id,
+      patientId: patient._id,
+      physiologistId: session.physiologistId,
+      exerciseId: 'hand_raise',
       raiseAngleThreshold: raiseAngle,
       lowerAngleThreshold: lowerAngle,
       targetReps,
-      notes,
+      notes: `${careArea} rehab — controlled movement, pain-free range.`,
     });
     presCount++;
 
-    // 1-3 exercise results per prescription (simulates multiple sessions done)
     const numResults = randInt(1, 3);
     for (let r = 0; r < numResults; r++) {
       const reps = randInt(Math.floor(targetReps * 0.6), targetReps);
@@ -268,42 +459,93 @@ async function run() {
       const romPercent = randInt(55, 95);
       const consistency = randInt(60, 95);
       const assistedPercent = Math.round((assistedReps / Math.max(reps, 1)) * 100);
-      const repAngles = Array.from({ length: reps }, () => randInt(raiseAngle - 15, raiseAngle + 10));
-      const restAngle = randInt(lowerAngle - 5, lowerAngle + 5);
 
       await ExerciseResult.create({
         prescriptionId: prescription._id,
-        patientId:      patient._id,
-        reps, assistedReps, score,
+        patientId: patient._id,
+        reps,
+        assistedReps,
+        score,
         originalTargetAngle: raiseAngle,
-        adaptedTargetAngle:  raiseAngle + randInt(-5, 10),
-        repPeakAngles: repAngles,
-        restAngle, restCalibrated: true,
+        adaptedTargetAngle: raiseAngle + randInt(-5, 10),
+        repPeakAngles: Array.from({ length: reps }, () => randInt(raiseAngle - 15, raiseAngle + 10)),
+        restAngle: randInt(lowerAngle - 5, lowerAngle + 5),
+        restCalibrated: true,
         analysis: {
-          romPercent, consistency, assistedPercent,
+          romPercent,
+          consistency,
+          assistedPercent,
           aiSummary: resultSummary(reps, targetReps, romPercent, consistency, assistedPercent),
         },
       });
       resultCount++;
     }
   }
+  console.log(`  ${presCount} prescriptions, ${resultCount} results`);
 
-  console.log(`  ${presCount} prescriptions, ${resultCount} exercise results`);
+  // ── 5. Sample chat threads ──────────────────────────────────────────────────
+  console.log('\n── Creating sample chat threads ──');
+  const chatPairs = [
+    [patientDocs[0], physioDocs[0], 'Hi doctor — knee feels better after yesterday’s session.'],
+    [patientDocs[1], physioDocs[1], 'Should I ice after the shoulder raises tonight?'],
+    [patientDocs[4], physioDocs[4], 'Can we reschedule Thursday if something opens up?'],
+  ];
+  for (const [patient, physio, body] of chatPairs) {
+    const thread = await ChatThread.create({
+      patientId: patient._id,
+      physiologistId: physio._id,
+      lastMessageAt: new Date(),
+      lastMessagePreview: body.slice(0, 80),
+      lastSenderRole: 'patient',
+      patientUnread: 0,
+      physiologistUnread: 1,
+    });
+    await ChatMessage.create({
+      threadId: thread._id,
+      senderId: patient._id,
+      senderRole: 'patient',
+      body,
+    });
+    await ChatMessage.create({
+      threadId: thread._id,
+      senderId: physio._id,
+      senderRole: 'physiologist',
+      body: 'Thanks for the update — keep the home program going and message anytime.',
+    });
+    thread.lastMessagePreview = 'Thanks for the update — keep the home program going…';
+    thread.lastSenderRole = 'physiologist';
+    thread.patientUnread = 1;
+    thread.physiologistUnread = 0;
+    await thread.save();
+    console.log(`  thread ${patient.name} ↔ ${physio.name}`);
+  }
 
-  // ── 6. Summary ────────────────────────────────────────────────────────────────
+  // ── 6. Smoke-check login hash ───────────────────────────────────────────────
+  const probe = await User.findOne({ email: PHYSIOS[0].email });
+  const ok = await probe.comparePassword(PHYSIO_PW);
+  console.log(`\n── Password check (physio): ${ok ? 'OK' : 'FAILED'} ──`);
+  const probeP = await User.findOne({ email: PATIENTS[0].email });
+  const okP = await probeP.comparePassword(PATIENT_PW);
+  console.log(`── Password check (patient): ${okP ? 'OK' : 'FAILED'} ──`);
+
   const totals = {
-    patients:    patientDocs.length,
-    sessions:    sessionDocs.length,
-    approved:    approved.length,
-    summarised:  sessionDocs.filter(s => s.status === 'summarised').length,
-    pending:     sessionDocs.filter(s => s.status === 'pending').length,
+    physios: physioDocs.length,
+    patients: patientDocs.length,
+    sessions: sessionDocs.length,
+    approved: approved.length,
+    summarised: sessionDocs.filter(s => s.status === 'summarised').length,
+    pending: sessionDocs.filter(s => s.status === 'pending').length,
     prescriptions: presCount,
-    results:     resultCount,
+    results: resultCount,
+    chats: chatPairs.length,
   };
 
-  console.log('\n── Done ──────────────────────────────────────────────────────────');
+  console.log('\n── Done ──');
   console.log(totals);
   await mongoose.disconnect();
 }
 
-run().catch(e => { console.error(e); process.exit(1); });
+run().catch(e => {
+  console.error(e);
+  process.exit(1);
+});

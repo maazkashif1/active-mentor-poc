@@ -20,6 +20,7 @@ import { RouteProp } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSlots, bookSession } from '../../services/sessionService';
 import { physioPhotoSource } from '../../utils/physioAvatar';
+import { clinicImageSource, clinicMapSource, hospitalLogoSource } from '../../utils/hospitals';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -63,27 +64,40 @@ const IMG = {
 const FALLBACK_CLINICS = [
   {
     id: 'aga',
-    name: 'Aga Khan Hospital',
-    logo: IMG.agakhan,
-    branch: 'Aga Khan Hospital and Diagnostic Centre, Garden',
+    name: 'Aga Khan University Hospital',
+    logo: hospitalLogoSource('aga_khan') || IMG.agakhan,
+    logoKey: 'aga_khan',
+    branch: 'Stadium Road / Garden · Karachi',
+    hasLogo: true,
   },
   {
     id: 'zia',
     name: 'Dr Ziauddin Hospital',
-    logo: IMG.ziauddin,
-    branch: 'Dr Ziauddin Hospital — Clifton Campus',
+    logo: hospitalLogoSource('ziauddin') || IMG.ziauddin,
+    logoKey: 'ziauddin',
+    branch: 'Clifton Campus · Karachi',
+    hasLogo: true,
   },
 ];
 
 function clinicsFromPhysio(physio: any) {
   const list = Array.isArray(physio?.clinics) ? physio.clinics.filter((c: any) => c?.name || c?.branch) : [];
   if (!list.length) return FALLBACK_CLINICS;
-  return list.map((c: any, i: number) => ({
-    id: String(c._id || `clinic-${i}`),
-    name: c.name || 'Clinic',
-    logo: i % 2 === 0 ? IMG.agakhan : IMG.ziauddin,
-    branch: [c.branch, c.address].filter(Boolean).join(' · ') || c.name || 'Clinic',
-  }));
+  return list.map((c: any, i: number) => {
+    const logo = clinicImageSource(c);
+    const map = clinicMapSource(c);
+    return {
+      id: String(c._id || c.placeId || c.logoKey || `clinic-${i}`),
+      name: c.name || 'Clinic',
+      logo,
+      map,
+      logoKey: c.logoKey || '',
+      branch: [c.branch, c.city || c.address].filter(Boolean).join(' · ') || c.name || 'Clinic',
+      hasLogo: !!logo,
+      lat: c.lat,
+      lng: c.lng,
+    };
+  });
 }
 
 function parseTime(t: string): number {
@@ -359,14 +373,16 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
                     onPress={() => setHospitalId(h.id)}
                     activeOpacity={0.85}
                   >
-                    {usingRealClinics ? (
-                      <View style={{ flex: 1, paddingRight: 12 * SCALE }}>
-                        <Text style={s.clinicName}>{h.name}</Text>
-                        <Text style={s.clinicBranch} numberOfLines={2}>{h.branch}</Text>
-                      </View>
-                    ) : (
-                      <Image source={h.logo} style={s.hospitalLogo} resizeMode="contain" />
-                    )}
+                    <View style={s.clinicMain}>
+                      {h.logo ? (
+                        <Image source={h.logo} style={s.hospitalLogo} resizeMode="contain" />
+                      ) : (
+                        <View style={s.hospitalLogoFallback}>
+                          <Text style={s.hospitalLogoFallbackText} numberOfLines={2}>{h.name}</Text>
+                        </View>
+                      )}
+                      <Text style={s.clinicBranch} numberOfLines={2}>{h.branch}</Text>
+                    </View>
                     <View style={[s.radio, active && s.radioActive]}>
                       {active ? <View style={s.radioDot} /> : null}
                     </View>
@@ -376,7 +392,7 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
             </View>
           </View>
 
-          {/* Branch */}
+          {/* Branch + live map / place photo */}
           {hospital ? (
             <View style={s.section}>
               <Text style={s.sectionTitle}>Branch</Text>
@@ -385,10 +401,14 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
                 <Image source={IMG.pin} style={s.branchPin} resizeMode="contain" />
                 <Text style={s.branchText}>{hospital.branch}</Text>
               </View>
-              {!usingRealClinics ? (
+              {hospital.map ? (
                 <View style={s.mapWrap}>
-                  <Image source={IMG.map} style={s.mapImg} resizeMode="cover" />
+                  <Image source={hospital.map} style={s.mapImg} resizeMode="cover" />
                   <Image source={IMG.pinMap} style={s.mapPin} resizeMode="contain" />
+                </View>
+              ) : hospital.logo && !hospital.logoKey ? (
+                <View style={s.mapWrap}>
+                  <Image source={hospital.logo} style={s.mapImg} resizeMode="cover" />
                 </View>
               ) : null}
             </View>
@@ -735,7 +755,22 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  clinicMain: { flex: 1, paddingRight: 12 * SCALE, gap: 6 * SCALE },
   hospitalLogo: { width: 182 * SCALE, height: 40 * SCALE },
+  hospitalLogoFallback: {
+    width: 182 * SCALE,
+    minHeight: 40 * SCALE,
+    borderRadius: 10,
+    backgroundColor: ACCENT,
+    justifyContent: 'center',
+    paddingHorizontal: 10 * SCALE,
+  },
+  hospitalLogoFallbackText: {
+    fontFamily: font('Medium'),
+    fontSize: 12 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
   clinicName: {
     fontFamily: font('Medium'),
     fontSize: 14 * SCALE,

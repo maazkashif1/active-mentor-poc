@@ -7,6 +7,7 @@ import GlassCard from '../../components/ui/GlassCard';
 import ErrorState from '../../components/ui/ErrorState';
 import { ProfileSkeleton } from '../../components/ui/Skeletons';
 import { api, getToken, clearToken, setUserName } from '../../lib/api';
+import ClinicAffiliations from '../../components/ClinicAffiliations';
 
 const SPECIALTIES = [
   'Sports Physiotherapy', 'Musculoskeletal', 'Neurological', 'Orthopedic',
@@ -34,7 +35,7 @@ export default function ProfilePage() {
   const [bio, setBio] = useState('');
   const [photo, setPhoto] = useState('');
   const [education, setEducation] = useState([]);
-  const [clinics, setClinics] = useState([{ name: '', branch: '', address: '' }]);
+  const [clinics, setClinics] = useState([]);
   const [googleConnected, setGoogleConnected] = useState(false);
 
   useEffect(() => {
@@ -49,7 +50,7 @@ export default function ProfilePage() {
         setBio(u.bio || '');
         setPhoto(u.photo || '');
         setEducation(u.education || []);
-        setClinics(u.clinics?.length ? u.clinics : [{ name: '', branch: '', address: '' }]);
+        setClinics(u.clinics?.length ? u.clinics : []);
         setGoogleConnected(!!(u.googleTokens && u.googleTokens.refreshToken));
       })
       .catch(e => setError(e.message))
@@ -60,11 +61,6 @@ export default function ProfilePage() {
   const removeEdu = (i) => setEducation(prev => prev.filter((_, idx) => idx !== i));
   const patchEdu = (i, k, v) =>
     setEducation(prev => prev.map((e, idx) => idx === i ? { ...e, [k]: v } : e));
-
-  const addClinic = () => setClinics(prev => [...prev, { name: '', branch: '', address: '' }]);
-  const removeClinic = (i) => setClinics(prev => prev.filter((_, idx) => idx !== i));
-  const patchClinic = (i, k, v) =>
-    setClinics(prev => prev.map((c, idx) => idx === i ? { ...c, [k]: v } : c));
 
   const handlePhoto = async (e) => {
     const file = e.target.files?.[0];
@@ -96,7 +92,22 @@ export default function ProfilePage() {
     setSaving(true); setError(''); setSuccess('');
     try {
       const cleanedEdu = education.filter(e => e.degree || e.institution);
-      const cleanedClinics = clinics.filter(c => c.name || c.branch);
+      const cleanedClinics = clinics
+        .filter(c => c.name || c.branch)
+        .map(c => ({
+          name: c.name || '',
+          branch: c.branch || '',
+          address: c.address || c.city || '',
+          city: c.city || '',
+          placeId: c.placeId || '',
+          logoKey: c.logoKey || '',
+          photoName: c.photoName || '',
+          photoUrl: c.photoUrl || '',
+          mapUrl: c.mapUrl || '',
+          lat: c.lat ?? null,
+          lng: c.lng ?? null,
+          source: c.source || (c.logoKey ? 'curated' : c.placeId ? 'places' : 'manual'),
+        }));
       const data = await api.patch('/api/physiologist/profile', {
         name,
         specialty,
@@ -115,7 +126,7 @@ export default function ProfilePage() {
     }
   };
 
-  const googleHref = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/api/auth/google?token=${getToken()}`;
+  const googleHref = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/api/auth/google?token=${encodeURIComponent(getToken() || '')}&returnTo=${encodeURIComponent('/profile')}`;
 
   return (
     <AppShell>
@@ -207,35 +218,13 @@ export default function ProfilePage() {
             </GlassCard>
 
             <GlassCard className="rise" style={{ animationDelay: '100ms' }}>
-              <h2 className="card-title">Clinics (Available At)</h2>
-              <p className="form-hint" style={{ marginTop: 8 }}>Shown on your patient-facing profile when booking.</p>
-              <div className="stack" style={{ marginTop: 16, gap: 12 }}>
-                {clinics.map((c, i) => (
-                  <div key={i} className="edu-card">
-                    {clinics.length > 1 ? (
-                      <button type="button" className="edu-remove" onClick={() => removeClinic(i)} aria-label={`Remove clinic ${i + 1}`}>×</button>
-                    ) : null}
-                    <div className="form-grid">
-                      <div style={{ gridColumn: '1 / -1' }}>
-                        <label className="form-label">Clinic name</label>
-                        <input type="text" value={c.name} placeholder="Hospital or practice name"
-                          onChange={e => patchClinic(i, 'name', e.target.value)} className="form-field" />
-                      </div>
-                      <div>
-                        <label className="form-label">Branch</label>
-                        <input type="text" value={c.branch} placeholder="Campus / branch"
-                          onChange={e => patchClinic(i, 'branch', e.target.value)} className="form-field" />
-                      </div>
-                      <div>
-                        <label className="form-label">Address / city</label>
-                        <input type="text" value={c.address} placeholder="City or address"
-                          onChange={e => patchClinic(i, 'address', e.target.value)} className="form-field" />
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              <h2 className="card-title">Hospital affiliations</h2>
+              <p className="form-hint" style={{ marginTop: 8 }}>
+                Shown as “Available At” on your patient-facing profile.
+              </p>
+              <div style={{ marginTop: 16 }}>
+                <ClinicAffiliations clinics={clinics} onChange={setClinics} />
               </div>
-              <button type="button" className="btn-dashed" onClick={addClinic}>+ Add clinic</button>
             </GlassCard>
 
             <GlassCard className="rise" style={{ animationDelay: '120ms' }}>

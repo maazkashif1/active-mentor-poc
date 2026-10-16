@@ -12,6 +12,7 @@ const otpRoutes = require('./api/otpRoutes');
 const patientRoutes = require('./api/patientRoutes');
 const uploadRoutes = require('./api/uploadRoutes');
 const chatRoutes = require('./api/chatRoutes');
+const placesRoutes = require('./api/placesRoutes');
 
 const app = express();
 
@@ -35,5 +36,6 @@ app.use('/api/auth', otpRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/places', placesRoutes);
 
 module.exports = app;

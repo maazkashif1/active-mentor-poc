@@ -291,7 +291,8 @@ export default function SignupPage() {
       });
       setToken(loginData.token);
       setUserName(account.name);
-      router.push('/availability?onboarding=1');
+      // Meet links need Google Calendar — prompt immediately, then schedule
+      router.push('/onboarding/calendar');
     } catch (err) {
       setError(err.message);
     } finally {

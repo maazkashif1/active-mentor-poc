@@ -200,8 +200,8 @@ function AvailabilityInner() {
       {isOnboarding && (
         <div className="banner banner-copper">
           <div>
-            <p><strong>Account created. One last step.</strong></p>
-            <p>Set your working hours and apply your schedule so patients can book appointments.</p>
+            <p><strong>Step 2 of 2 — set your hours</strong></p>
+            <p>Apply a schedule so patients can book. Video Meet links are created automatically once Google Calendar is connected.</p>
           </div>
         </div>
       )}

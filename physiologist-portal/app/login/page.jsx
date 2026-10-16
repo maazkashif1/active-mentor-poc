@@ -20,7 +20,8 @@ export default function LoginPage() {
       const data = await api.post('/api/users/login', { email, password });
       if (!data.token) throw new Error('Login succeeded but no token returned');
       setToken(data.token);
-      if (data.name) setUserName(data.name);
+      const displayName = data.user?.name || data.name;
+      if (displayName) setUserName(displayName);
       router.push('/dashboard');
     } catch (err) {
       setError(err.message);

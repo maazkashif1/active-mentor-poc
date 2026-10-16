@@ -1,28 +1,41 @@
 # Mock Data Reference
 
-All test accounts use simple passwords. Recreate at any time: `node server/seed.js`
+Recreate anytime (wipes users/sessions/prescriptions/results/chats, then reseeds):
+
+```bash
+cd server
+node seed.js
+```
+
+Patient app API: `https://active-mentor-poc.onrender.com/api`  
+Physio portal: set `NEXT_PUBLIC_API_URL` to that same host (not bare localhost) if hitting the shared Render DB.
 
 ---
 
 ## Physiologist Accounts (Portal)
 
-Portal: `http://localhost:5173`  
 Password for all: **`Password123`**
 
-| Name | Email |
-|---|---|
-| Dr. Ahmed Khan | dr.ahmed.khan@yopmail.com |
-| Dr. Sania Ali | dr.sania.ali@yopmail.com |
-| Dr. Omar Farooq | dr.omar.farooq@yopmail.com |
-| Dr. Fatima Sheikh | dr.fatima.sheikh@yopmail.com |
-| Dr. Hassan Malik | dr.hassan.malik@yopmail.com |
-| Dr. Ayesha Nawaz | dr.ayesha.nawaz@yopmail.com |
-| Dr. Bilal Ahmad | dr.bilal.ahmad@yopmail.com |
-| Dr. Zara Hussain | dr.zara.hussain@yopmail.com |
-| Dr. Kamran Qureshi | dr.kamran.qureshi@yopmail.com |
-| Dr. Nadia Iqbal | dr.nadia.iqbal@yopmail.com |
-| Dr. Usman Baig | dr.usman.baig@yopmail.com |
-| Dr. Maryam Raza | dr.maryam.raza@yopmail.com |
+| Name | Email | Specialty |
+|---|---|---|
+| Dr. Ahmed Khan | dr.ahmed.khan@yopmail.com | Knee Specialist · Sports Injury |
+| Dr. Sania Ali | dr.sania.ali@yopmail.com | Shoulder Expert · Orthopedic |
+| Dr. Omar Farooq | dr.omar.farooq@yopmail.com | Musculoskeletal · Back Care |
+| Dr. Fatima Sheikh | dr.fatima.sheikh@yopmail.com | Women's Health · Post-Surgical Rehab |
+| Dr. Hassan Malik | dr.hassan.malik@yopmail.com | Sports Physiotherapy · Knee Rehab |
+| Dr. Ayesha Nawaz | dr.ayesha.nawaz@yopmail.com | Neurological · Mobility Care |
+| Dr. Bilal Ahmad | dr.bilal.ahmad@yopmail.com | Elbow Care · Upper Limb |
+| Dr. Zara Hussain | dr.zara.hussain@yopmail.com | Pediatric · Musculoskeletal |
+| Dr. Kamran Qureshi | dr.kamran.qureshi@yopmail.com | Pain Management · Orthopedic |
+| Dr. Nadia Iqbal | dr.nadia.iqbal@yopmail.com | Ankle · Foot Rehab |
+| Dr. Usman Baig | dr.usman.baig@yopmail.com | Cardiopulmonary · Geriatric |
+| Dr. Maryam Raza | dr.maryam.raza@yopmail.com | Shoulder Expert · Post-Surgical Rehab |
+
+Each physio includes: specialty, bio, education, clinic(s), schedule, and ~21 days of open slots (`HH:mm`).
+
+Quick smoke logins:
+- Portal: `dr.ahmed.khan@yopmail.com` / `Password123`
+- App: `asad.malik@yopmail.com` / `Patient123` (knee, Lahore — has chat with Dr. Ahmed)
 
 ---
 
@@ -55,29 +68,34 @@ Password for all: **`Patient123`**
 
 ---
 
-## Seeded Data Summary (last run: 2026-10-15)
+## Seeded Data Summary
 
-| Entity | Count |
+| Entity | Notes |
 |---|---|
-| Patients | 20 |
-| Sessions (total) | 83 |
-| — Approved | ~50 |
-| — Awaiting Review | ~14 |
-| — Pending | ~19 |
-| Prescriptions | 50 |
-| Exercise Results | 90 |
-| Future physio slots | ~430 (next 14 days) |
+| Physiologists | 12 with specialty, bio, education, clinics, slots |
+| Patients | 20 with city / careArea / side / dob |
+| Sessions | ~60–90 across last 14 days (pending / summarised / approved) |
+| Prescriptions + results | On approved sessions |
+| Chat threads | 3 sample patient↔physio threads |
 
-Sessions are spread across the **last 14 days** so the dashboard bar chart shows activity.  
-Each approved session has 1–3 exercise results with AI summaries, ROM%, and consistency scores.
+Photos are empty on purpose — the app uses stable local placeholders until a physio uploads one in the portal.
+
+### Hospital affiliations
+Curated logos: Aga Khan, Ziauddin, Shaukat Khanum, South City, Doctors Hospital, National Hospital, PIMS, Services.  
+Portal profile: tap curated chips **or** search (Places when `GOOGLE_PLACES_API_KEY` is set; otherwise curated filter).
 
 ---
 
-## Re-seeding
+## App ↔ backend wiring checklist
 
-```bash
-cd server
-node seed.js
-```
+| Feature | Wired |
+|---|---|
+| Login / register / OTP | Yes |
+| Patient profile patch (dob, city, care intake) | Yes |
+| Physio list + slots + book | Yes |
+| Sessions / prescriptions / progress / results upload | Yes |
+| Chat REST + socket | Yes (needs server with chat routes deployed) |
+| Physio specialty / education / clinics / photo | Yes (after this seed + profile APIs) |
+| Ratings / maps / fake hospital logos | UI-only fallbacks when clinics missing |
 
-The script is idempotent for patients (skips existing emails) and deletes/recreates sessions on every run.
+**Note:** Redeploy the Render API if it is still on an older build without `clinics`, chat, or image upload. Seed writes to whatever `MONGO_URI` is in `server/.env`.

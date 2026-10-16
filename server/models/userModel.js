@@ -33,6 +33,15 @@ const userSchema = new mongoose.Schema({
     name: String,
     branch: String,
     address: String,
+    city: { type: String, default: '' },
+    placeId: { type: String, default: '' },
+    logoKey: { type: String, default: '' }, // curated catalog key, e.g. aga_khan
+    photoName: { type: String, default: '' }, // Places photo resource name
+    photoUrl: { type: String, default: '' }, // cached CDN uri (may expire; prefer photoName)
+    mapUrl: { type: String, default: '' }, // optional Static Maps preview
+    lat: { type: Number, default: null },
+    lng: { type: Number, default: null },
+    source: { type: String, enum: ['curated', 'places', 'manual', ''], default: '' },
   }],
   // patient onboarding data
   firstName: { type: String, default: '' },

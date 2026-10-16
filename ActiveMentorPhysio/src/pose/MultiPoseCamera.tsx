@@ -1,7 +1,14 @@
 import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { View, Text, StyleSheet, LayoutChangeEvent } from 'react-native';
 import {
-  Camera, useCameraDevice, useCameraPermission, useFrameOutput, HybridFrameConverter,
+  Camera,
+  useCameraDevice,
+  useCameraPermission,
+  useFrameOutput,
+  useVideoOutput,
+  HybridFrameConverter,
+  CommonResolutions,
+  type Recorder,
 } from 'react-native-vision-camera';
 import { useTensorflowModel } from 'react-native-fast-tflite';
 import { runOnJS } from 'react-native-worklets';
@@ -74,7 +81,8 @@ const Live = React.forwardRef<MultiPoseCameraHandle, any>(
   const [angles, setAngles] = useState<Angle[]>([]);
   const [assistedNow, setAssistedNow] = useState(false);
   const dims = useRef({ w: 0, h: 0 });
-  const cameraRef = useRef<Camera>(null);
+  const recorderRef = useRef<Recorder | null>(null);
+  const startingRef = useRef(false);
 
   const tracks = useRef<Track[]>([]);
   const nextId = useRef(0);
@@ -82,15 +90,46 @@ const Live = React.forwardRef<MultiPoseCameraHandle, any>(
   const primaryAnchor = useRef<{ x: number; y: number } | null>(null);
   const tap = useRef<{ x: number; y: number } | null>(null);
 
+  // Vision Camera v5: recording lives on a VideoOutput Recorder, not CameraRef
+  const videoOutput = useVideoOutput({
+    targetResolution: CommonResolutions.HD_16_9,
+    enableAudio: false,
+    fileType: 'mp4',
+  });
+
   useImperativeHandle(ref, () => ({
     startRecording: (opts) => {
-      cameraRef.current?.startRecording({
-        onRecordingFinished: (video) => opts.onRecordingFinished(video.path),
-        onRecordingError: opts.onRecordingError,
-      });
+      if (startingRef.current || recorderRef.current?.isRecording) return;
+      startingRef.current = true;
+      (async () => {
+        try {
+          const recorder = await videoOutput.createRecorder({});
+          recorderRef.current = recorder;
+          await recorder.startRecording(
+            (filePath) => {
+              recorderRef.current = null;
+              startingRef.current = false;
+              opts.onRecordingFinished(filePath);
+            },
+            (error) => {
+              recorderRef.current = null;
+              startingRef.current = false;
+              opts.onRecordingError(error);
+            },
+          );
+        } catch (e) {
+          recorderRef.current = null;
+          startingRef.current = false;
+          opts.onRecordingError(e);
+        }
+      })();
     },
-    stopRecording: () => cameraRef.current?.stopRecording() ?? Promise.resolve(),
-  }));
+    stopRecording: async () => {
+      const recorder = recorderRef.current;
+      if (!recorder?.isRecording) return;
+      await recorder.stopRecording();
+    },
+  }), [videoOutput]);
 
   const activeTriplets: [number, number, number][] =
     side === 'left' ? [def.left] : side === 'right' ? [def.right] : [def.left, def.right];
@@ -225,15 +264,13 @@ const Live = React.forwardRef<MultiPoseCameraHandle, any>(
   const cameraEl = React.useMemo(
     () => (
       <Camera
-        ref={cameraRef}
         style={StyleSheet.absoluteFill}
         device={device}
         isActive={isActive}
-        video
-        outputs={[frameOutput]}
+        outputs={[frameOutput, videoOutput]}
       />
     ),
-    [device, isActive, frameOutput],
+    [device, isActive, frameOutput, videoOutput],
   );
 
   return (
