@@ -11,13 +11,19 @@ function signToken(user) {
 
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, role, specialty, bio, yearsExperience, education } = req.body;
+    const {
+      name, email, password, role, specialty, bio, yearsExperience,
+      education, clinics, photo, firstName, dob, city,
+    } = req.body;
     if (await User.findOne({ email })) {
       return res.status(409).json({ message: 'Email already registered' });
     }
     const user = await User.create({
       name, email, password, role: role || 'patient',
-      specialty, bio, yearsExperience, education,
+      specialty, bio, yearsExperience, education, clinics, photo,
+      firstName: firstName || '',
+      dob: dob || '',
+      city: city || '',
     });
     res.status(201).json({ token: signToken(user), user: { id: user._id, name: user.name, email: user.email, role: user.role } });
   } catch (err) {

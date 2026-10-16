@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AppShell from '../../components/ui/AppShell';
 import PageHeader from '../../components/ui/PageHeader';
@@ -8,10 +8,10 @@ import ErrorState from '../../components/ui/ErrorState';
 import { ProfileSkeleton } from '../../components/ui/Skeletons';
 import { api, getToken, clearToken, setUserName } from '../../lib/api';
 
-const SPECIALIZATIONS = [
+const SPECIALTIES = [
   'Sports Physiotherapy', 'Musculoskeletal', 'Neurological', 'Orthopedic',
   'Pediatric', 'Geriatric', 'Cardiopulmonary', "Women's Health",
-  'Post-Surgical Rehab', 'Pain Management',
+  'Post-Surgical Rehab', 'Pain Management', 'Knee Specialist',
 ];
 
 function initials(name) {
@@ -20,17 +20,21 @@ function initials(name) {
 
 export default function ProfilePage() {
   const router = useRouter();
+  const fileRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [specialization, setSpecialization] = useState('');
+  const [specialty, setSpecialty] = useState('');
   const [yearsExp, setYearsExp] = useState('');
   const [bio, setBio] = useState('');
+  const [photo, setPhoto] = useState('');
   const [education, setEducation] = useState([]);
+  const [clinics, setClinics] = useState([{ name: '', branch: '', address: '' }]);
   const [googleConnected, setGoogleConnected] = useState(false);
 
   useEffect(() => {
@@ -40,10 +44,12 @@ export default function ProfilePage() {
         const u = d.user;
         setName(u.name || '');
         setEmail(u.email || '');
-        setSpecialization(u.specialization || '');
+        setSpecialty(u.specialty || '');
         setYearsExp(u.yearsExperience != null ? String(u.yearsExperience) : '');
         setBio(u.bio || '');
+        setPhoto(u.photo || '');
         setEducation(u.education || []);
+        setClinics(u.clinics?.length ? u.clinics : [{ name: '', branch: '', address: '' }]);
         setGoogleConnected(!!(u.googleTokens && u.googleTokens.refreshToken));
       })
       .catch(e => setError(e.message))
@@ -55,16 +61,50 @@ export default function ProfilePage() {
   const patchEdu = (i, k, v) =>
     setEducation(prev => prev.map((e, idx) => idx === i ? { ...e, [k]: v } : e));
 
+  const addClinic = () => setClinics(prev => [...prev, { name: '', branch: '', address: '' }]);
+  const removeClinic = (i) => setClinics(prev => prev.filter((_, idx) => idx !== i));
+  const patchClinic = (i, k, v) =>
+    setClinics(prev => prev.map((c, idx) => idx === i ? { ...c, [k]: v } : c));
+
+  const handlePhoto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true); setError(''); setSuccess('');
+    try {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const { uploadUrl, fileUrl, contentType } = await api.get(
+        `/api/upload/presigned?ext=${encodeURIComponent(ext)}&kind=image`,
+      );
+      const put = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': contentType || file.type || 'image/jpeg' },
+        body: file,
+      });
+      if (!put.ok) throw new Error('Upload failed');
+      setPhoto(fileUrl);
+      await api.patch('/api/physiologist/profile', { photo: fileUrl });
+      setSuccess('Photo updated.');
+    } catch (err) {
+      setError(err.message || 'Could not upload photo');
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true); setError(''); setSuccess('');
     try {
       const cleanedEdu = education.filter(e => e.degree || e.institution);
+      const cleanedClinics = clinics.filter(c => c.name || c.branch);
       const data = await api.patch('/api/physiologist/profile', {
         name,
-        specialization,
+        specialty,
         yearsExperience: yearsExp ? Number(yearsExp) : null,
         bio,
         education: cleanedEdu,
+        clinics: cleanedClinics,
+        photo: photo || '',
       });
       setUserName(data.user.name);
       setSuccess('Profile saved.');
@@ -80,7 +120,7 @@ export default function ProfilePage() {
   return (
     <AppShell>
       <div className="profile-wrap">
-        <PageHeader title="Profile" subtitle="Your clinical profile" />
+        <PageHeader title="Profile" subtitle="Your clinical profile — shown to patients in the app" />
 
         {loading ? (
           <GlassCard className="rise">
@@ -90,11 +130,26 @@ export default function ProfilePage() {
           <div className="stack">
             <GlassCard className="rise">
               <div className="profile-id">
-                <span className="avatar avatar-lg" aria-hidden="true">{initials(name)}</span>
+                {photo ? (
+                  <img src={photo} alt="" className="avatar avatar-lg" style={{ objectFit: 'cover' }} />
+                ) : (
+                  <span className="avatar avatar-lg" aria-hidden="true">{initials(name)}</span>
+                )}
                 <div>
                   <h2>{name || '—'}</h2>
                   <p className="page-sub">{email || 'No email on file'}</p>
-                  {specialization ? <span className="spec-pill">{specialization}</span> : null}
+                  {specialty ? <span className="spec-pill">{specialty}</span> : null}
+                  <div style={{ marginTop: 12 }}>
+                    <input ref={fileRef} type="file" accept="image/*" hidden onChange={handlePhoto} />
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      disabled={uploading}
+                      onClick={() => fileRef.current?.click()}
+                    >
+                      {uploading ? 'Uploading…' : photo ? 'Change photo' : 'Upload photo'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </GlassCard>
@@ -123,20 +178,64 @@ export default function ProfilePage() {
             </GlassCard>
 
             <GlassCard className="rise" style={{ animationDelay: '80ms' }}>
-              <h2 className="card-title">Specialization</h2>
-              <div className="chip-row" style={{ marginTop: 16 }} role="group" aria-label="Specialization">
-                {SPECIALIZATIONS.map(s => (
+              <h2 className="card-title">Specialty</h2>
+              <p className="form-hint" style={{ marginTop: 8 }}>Patients search and filter by this.</p>
+              <div className="chip-row" style={{ marginTop: 16 }} role="group" aria-label="Specialty">
+                {SPECIALTIES.map(s => (
                   <button
                     key={s}
                     type="button"
                     className="chip-pick"
-                    aria-pressed={specialization === s}
-                    onClick={() => setSpecialization(prev => prev === s ? '' : s)}
+                    aria-pressed={specialty === s}
+                    onClick={() => setSpecialty(prev => prev === s ? '' : s)}
                   >
                     {s}
                   </button>
                 ))}
               </div>
+              <div style={{ marginTop: 16 }}>
+                <label className="form-label" htmlFor="specialty-custom">Or type your own</label>
+                <input
+                  id="specialty-custom"
+                  type="text"
+                  value={specialty}
+                  onChange={e => setSpecialty(e.target.value)}
+                  placeholder="e.g. Knee Specialist · Sports Injury"
+                  className="form-field"
+                />
+              </div>
+            </GlassCard>
+
+            <GlassCard className="rise" style={{ animationDelay: '100ms' }}>
+              <h2 className="card-title">Clinics (Available At)</h2>
+              <p className="form-hint" style={{ marginTop: 8 }}>Shown on your patient-facing profile when booking.</p>
+              <div className="stack" style={{ marginTop: 16, gap: 12 }}>
+                {clinics.map((c, i) => (
+                  <div key={i} className="edu-card">
+                    {clinics.length > 1 ? (
+                      <button type="button" className="edu-remove" onClick={() => removeClinic(i)} aria-label={`Remove clinic ${i + 1}`}>×</button>
+                    ) : null}
+                    <div className="form-grid">
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label className="form-label">Clinic name</label>
+                        <input type="text" value={c.name} placeholder="Hospital or practice name"
+                          onChange={e => patchClinic(i, 'name', e.target.value)} className="form-field" />
+                      </div>
+                      <div>
+                        <label className="form-label">Branch</label>
+                        <input type="text" value={c.branch} placeholder="Campus / branch"
+                          onChange={e => patchClinic(i, 'branch', e.target.value)} className="form-field" />
+                      </div>
+                      <div>
+                        <label className="form-label">Address / city</label>
+                        <input type="text" value={c.address} placeholder="City or address"
+                          onChange={e => patchClinic(i, 'address', e.target.value)} className="form-field" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="btn-dashed" onClick={addClinic}>+ Add clinic</button>
             </GlassCard>
 
             <GlassCard className="rise" style={{ animationDelay: '120ms' }}>

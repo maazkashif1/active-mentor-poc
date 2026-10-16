@@ -60,18 +60,31 @@ const IMG = {
   starStat: require('../../assets/images/figma/profile/icon_star_stat.png'),
 };
 
-const HOSPITALS = [
+const FALLBACK_CLINICS = [
   {
     id: 'aga',
+    name: 'Aga Khan Hospital',
     logo: IMG.agakhan,
     branch: 'Aga Khan Hospital and Diagnostic Centre, Garden',
   },
   {
     id: 'zia',
+    name: 'Dr Ziauddin Hospital',
     logo: IMG.ziauddin,
     branch: 'Dr Ziauddin Hospital — Clifton Campus',
   },
 ];
+
+function clinicsFromPhysio(physio: any) {
+  const list = Array.isArray(physio?.clinics) ? physio.clinics.filter((c: any) => c?.name || c?.branch) : [];
+  if (!list.length) return FALLBACK_CLINICS;
+  return list.map((c: any, i: number) => ({
+    id: String(c._id || `clinic-${i}`),
+    name: c.name || 'Clinic',
+    logo: i % 2 === 0 ? IMG.agakhan : IMG.ziauddin,
+    branch: [c.branch, c.address].filter(Boolean).join(' · ') || c.name || 'Clinic',
+  }));
+}
 
 function parseTime(t: string): number {
   const [h, m] = t.split(':').map(Number);
@@ -127,7 +140,8 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const physio = route.params?.physio;
   const [fav, setFav] = useState(false);
-  const [hospitalId, setHospitalId] = useState(HOSPITALS[0].id);
+  const clinics = useMemo(() => clinicsFromPhysio(physio), [physio]);
+  const [hospitalId, setHospitalId] = useState('');
   const [slots, setSlots] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [booking, setBooking] = useState(false);
@@ -135,6 +149,12 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
   const [selectedSlot, setSelectedSlot] = useState<any>(null);
   const [complaints, setComplaints] = useState('');
   const [monthOffset, setMonthOffset] = useState(0);
+
+  useEffect(() => {
+    if (clinics.length && !clinics.some(c => c.id === hospitalId)) {
+      setHospitalId(clinics[0].id);
+    }
+  }, [clinics, hospitalId]);
 
   useEffect(() => {
     if (!physio?._id) return;
@@ -160,7 +180,7 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
   const slotsForDate = slots.filter(s => s.date === activeDate);
   const today = new Date().toISOString().split('T')[0];
   const availableToday = slots.some(s => s.date === today);
-  const hospital = HOSPITALS.find(h => h.id === hospitalId) || HOSPITALS[0];
+  const hospital = clinics.find(h => h.id === hospitalId) || clinics[0];
   const monthLabel =
     dateChips.find(c => c.isoDate === activeDate)?.month ||
     new Date(new Date().getFullYear(), new Date().getMonth() + monthOffset, 1).toLocaleDateString(
@@ -169,11 +189,14 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
     );
 
   const education = physio?.education?.[0];
-  const degree = education?.degree || physio?.degree || 'MBBS, MD';
+  const degree = education?.degree
+    || (education?.institution ? education.institution : null)
+    || null;
   const specialty = physio?.specialty || physio?.specialization || 'Physiotherapist';
-  const years = physio?.yearsExperience ?? 8;
-  const rating = physio?.rating ?? 4.6;
+  const years = physio?.yearsExperience;
+  const bio = (physio?.bio || '').trim();
   const photoSource = physioPhotoSource(physio);
+  const usingRealClinics = Array.isArray(physio?.clinics) && physio.clinics.some((c: any) => c?.name || c?.branch);
 
   const confirmBooking = async () => {
     if (!selectedSlot) return Alert.alert('Select a time slot');
@@ -242,14 +265,9 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
             </TouchableOpacity>
           </View>
 
-          <View style={s.ratingPill}>
-            <Image source={IMG.star} style={s.ratingStar} resizeMode="contain" />
-            <Text style={s.ratingText}>{Number(rating).toFixed(1)}</Text>
-          </View>
-
           <View style={s.heroInfo}>
             <Text style={s.doctorName}>{displayName(physio)}</Text>
-            <Text style={s.degree}>{degree}</Text>
+            {degree ? <Text style={s.degree}>{degree}</Text> : null}
             <Text style={s.specialty}>{specialty}</Text>
           </View>
 
@@ -298,17 +316,25 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
           </View>
         </View>
 
-        {/* Stats card — overlaps hero */}
+        {/* Stats card — overlaps hero (only real fields) */}
         <View style={s.statsCard}>
           {[
-            { icon: IMG.globe, val: `${years} Years`, label: 'Experience' },
-            { icon: IMG.users, val: '3.5k +', label: 'Patients' },
-            { icon: IMG.starStat, val: '1k +', label: 'Reviews' },
-          ].map(stat => (
+            years != null
+              ? { icon: IMG.globe, val: `${years} Years`, label: 'Experience' }
+              : null,
+            specialty
+              ? { icon: IMG.users, val: specialty.split(/[·,]/)[0].trim().slice(0, 14), label: 'Focus' }
+              : null,
+            education?.institution
+              ? { icon: IMG.starStat, val: String(education.year || 'Cred.'), label: 'Credential' }
+              : bio
+                ? { icon: IMG.starStat, val: 'Profile', label: 'Verified' }
+                : null,
+          ].filter(Boolean).map((stat: any) => (
             <View key={stat.label} style={s.statItem}>
               <Image source={stat.icon} style={s.statIcon} resizeMode="contain" />
-              <View>
-                <Text style={s.statVal}>{stat.val}</Text>
+              <View style={{ maxWidth: 90 * SCALE }}>
+                <Text style={s.statVal} numberOfLines={1}>{stat.val}</Text>
                 <Text style={s.statLabel}>{stat.label}</Text>
               </View>
             </View>
@@ -320,9 +346,11 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
           {/* Available At */}
           <View style={s.section}>
             <Text style={s.sectionTitle}>Available At</Text>
-            <Text style={s.sectionHint}>Select one</Text>
+            <Text style={s.sectionHint}>
+              {usingRealClinics ? 'Select one clinic' : 'Select one (demo clinics until physio adds theirs)'}
+            </Text>
             <View style={s.hospitalList}>
-              {HOSPITALS.map(h => {
+              {clinics.map(h => {
                 const active = h.id === hospitalId;
                 return (
                   <TouchableOpacity
@@ -331,7 +359,14 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
                     onPress={() => setHospitalId(h.id)}
                     activeOpacity={0.85}
                   >
-                    <Image source={h.logo} style={s.hospitalLogo} resizeMode="contain" />
+                    {usingRealClinics ? (
+                      <View style={{ flex: 1, paddingRight: 12 * SCALE }}>
+                        <Text style={s.clinicName}>{h.name}</Text>
+                        <Text style={s.clinicBranch} numberOfLines={2}>{h.branch}</Text>
+                      </View>
+                    ) : (
+                      <Image source={h.logo} style={s.hospitalLogo} resizeMode="contain" />
+                    )}
                     <View style={[s.radio, active && s.radioActive]}>
                       {active ? <View style={s.radioDot} /> : null}
                     </View>
@@ -342,18 +377,43 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
           </View>
 
           {/* Branch */}
-          <View style={s.section}>
-            <Text style={s.sectionTitle}>Branch</Text>
-            <Text style={s.sectionHint}>Select one branch</Text>
-            <View style={s.branchChip}>
-              <Image source={IMG.pin} style={s.branchPin} resizeMode="contain" />
-              <Text style={s.branchText}>{hospital.branch}</Text>
+          {hospital ? (
+            <View style={s.section}>
+              <Text style={s.sectionTitle}>Branch</Text>
+              <Text style={s.sectionHint}>Selected location</Text>
+              <View style={s.branchChip}>
+                <Image source={IMG.pin} style={s.branchPin} resizeMode="contain" />
+                <Text style={s.branchText}>{hospital.branch}</Text>
+              </View>
+              {!usingRealClinics ? (
+                <View style={s.mapWrap}>
+                  <Image source={IMG.map} style={s.mapImg} resizeMode="cover" />
+                  <Image source={IMG.pinMap} style={s.mapPin} resizeMode="contain" />
+                </View>
+              ) : null}
             </View>
-            <View style={s.mapWrap}>
-              <Image source={IMG.map} style={s.mapImg} resizeMode="cover" />
-              <Image source={IMG.pinMap} style={s.mapPin} resizeMode="contain" />
+          ) : null}
+
+          {bio ? (
+            <View style={s.section}>
+              <Text style={s.sectionTitle}>About</Text>
+              <Text style={s.bioText}>{bio}</Text>
             </View>
-          </View>
+          ) : null}
+
+          {Array.isArray(physio?.education) && physio.education.length > 0 ? (
+            <View style={s.section}>
+              <Text style={s.sectionTitle}>Education</Text>
+              {physio.education.map((edu: any, i: number) => (
+                <View key={i} style={s.eduRow}>
+                  <Text style={s.eduDegree}>{edu.degree || 'Credential'}</Text>
+                  <Text style={s.eduMeta}>
+                    {[edu.institution, edu.year].filter(Boolean).join(' · ')}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
 
           {/* Select Date */}
           <View style={s.section}>
@@ -676,6 +736,37 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
   },
   hospitalLogo: { width: 182 * SCALE, height: 40 * SCALE },
+  clinicName: {
+    fontFamily: font('Medium'),
+    fontSize: 14 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
+  clinicBranch: {
+    fontFamily: font('Light'),
+    fontSize: 11 * SCALE,
+    color: 'rgba(51,51,51,0.55)',
+    marginTop: 2 * SCALE,
+  },
+  bioText: {
+    fontFamily: font('Light'),
+    fontSize: 13 * SCALE,
+    lineHeight: 20 * SCALE,
+    color: 'rgba(51,51,51,0.75)',
+    marginTop: 4 * SCALE,
+  },
+  eduRow: { marginTop: 6 * SCALE, gap: 2 * SCALE },
+  eduDegree: {
+    fontFamily: font('Medium'),
+    fontSize: 13 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
+  eduMeta: {
+    fontFamily: font('Light'),
+    fontSize: 11 * SCALE,
+    color: 'rgba(51,51,51,0.5)',
+  },
   radio: {
     width: 17 * SCALE,
     height: 17 * SCALE,

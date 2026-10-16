@@ -81,6 +81,17 @@ function StepAccount({ data, onChange, error, onNext }) {
 
 // ── Step 2: Professional profile ─────────────────────────────────────────────
 function StepProfile({ data, onChange, onNext, onBack }) {
+  const [localError, setLocalError] = useState('');
+
+  const handleNext = () => {
+    if (!data.specialty.trim()) {
+      setLocalError('Specialty is required — patients filter and browse by this.');
+      return;
+    }
+    setLocalError('');
+    onNext();
+  };
+
   return (
     <div className="space-y-5">
       <div>
@@ -89,7 +100,7 @@ function StepProfile({ data, onChange, onNext, onBack }) {
       </div>
 
       <div>
-        <label className="block text-sm text-white/60 mb-1">Specialty</label>
+        <label className="block text-sm text-white/60 mb-1">Specialty *</label>
         <input
           type="text"
           value={data.specialty}
@@ -121,12 +132,24 @@ function StepProfile({ data, onChange, onNext, onBack }) {
         />
       </div>
 
+      <div className="rounded-lg border border-white/10 p-4 space-y-3">
+        <p className="text-sm text-white/60">Clinic / practice (shown as “Available At”)</p>
+        <Field label="Clinic name" type="text" value={data.clinicName} placeholder="e.g. Aga Khan University Hospital"
+          onChange={v => onChange('clinicName', v)} />
+        <Field label="Branch / campus" type="text" value={data.clinicBranch} placeholder="e.g. Garden · Diagnostic Centre"
+          onChange={v => onChange('clinicBranch', v)} />
+        <Field label="Address / city" type="text" value={data.clinicAddress} placeholder="e.g. Karachi"
+          onChange={v => onChange('clinicAddress', v)} />
+      </div>
+
+      {localError && <p className="text-red-400 text-sm">{localError}</p>}
+
       <div className="flex gap-3">
         <button onClick={onBack}
           className="flex-1 py-2.5 rounded-lg border border-white/10 text-white/60 hover:text-white hover:border-white/30 transition-colors">
           ← Back
         </button>
-        <button onClick={onNext}
+        <button onClick={handleNext}
           className="flex-1 py-2.5 rounded-lg bg-[#DA7235] text-white font-semibold hover:bg-[#c5622a] transition-colors">
           Next →
         </button>
@@ -216,7 +239,10 @@ export default function SignupPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const [account, setAccount] = useState({ name: '', email: '', password: '' });
-  const [profile, setProfile] = useState({ specialty: '', yearsExperience: '', bio: '' });
+  const [profile, setProfile] = useState({
+    specialty: '', yearsExperience: '', bio: '',
+    clinicName: '', clinicBranch: '', clinicAddress: '',
+  });
   const [education, setEducation] = useState([]);
 
   const patchAccount = (k, v) => setAccount(prev => ({ ...prev, [k]: v }));
@@ -238,6 +264,14 @@ export default function SignupPage() {
       // Clean up education — drop empty rows
       const cleanedEdu = education.filter(e => e.degree || e.institution);
 
+      const clinics = (profile.clinicName || profile.clinicBranch)
+        ? [{
+            name: profile.clinicName.trim(),
+            branch: profile.clinicBranch.trim(),
+            address: profile.clinicAddress.trim(),
+          }]
+        : [];
+
       await api.post('/api/users/register', {
         name: account.name,
         email: account.email,
@@ -247,6 +281,7 @@ export default function SignupPage() {
         specialty: profile.specialty,
         bio: profile.bio,
         education: cleanedEdu,
+        clinics,
       });
 
       // Auto-login after registration

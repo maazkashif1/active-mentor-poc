@@ -10,7 +10,8 @@ const router = express.Router();
 // List all physiologists (patient use)
 router.get('/all', verifyToken, async (req, res) => {
   try {
-    const physios = await User.find({ role: 'physiologist' }).select('name email specialty photo bio yearsExperience availability');
+    const physios = await User.find({ role: 'physiologist' })
+      .select('name email specialty photo bio yearsExperience education clinics availability');
     res.json(physios);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -91,12 +92,16 @@ router.get('/profile', verifyToken, async (req, res) => {
 // Update own profile
 router.patch('/profile', verifyToken, async (req, res) => {
   try {
-    const { name, specialty, specialization, yearsExperience, bio, education } = req.body;
-    const user = await User.findByIdAndUpdate(
-      req.user.id,
-      { name, specialty: specialty || specialization, yearsExperience, bio, education },
-      { new: true },
-    ).select('-password');
+    const { name, specialty, specialization, yearsExperience, bio, education, photo, clinics } = req.body;
+    const update = {};
+    if (name != null) update.name = name;
+    if (specialty != null || specialization != null) update.specialty = specialty || specialization || '';
+    if (yearsExperience !== undefined) update.yearsExperience = yearsExperience;
+    if (bio != null) update.bio = bio;
+    if (education != null) update.education = education;
+    if (photo != null) update.photo = photo;
+    if (clinics != null) update.clinics = clinics;
+    const user = await User.findByIdAndUpdate(req.user.id, update, { new: true }).select('-password');
     res.json({ user });
   } catch (err) {
     res.status(500).json({ message: err.message });

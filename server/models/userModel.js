@@ -29,6 +29,11 @@ const userSchema = new mongoose.Schema({
     institution: String,
     year: String,
   }],
+  clinics: [{
+    name: String,
+    branch: String,
+    address: String,
+  }],
   // patient onboarding data
   firstName: { type: String, default: '' },
   dob: { type: String, default: '' },

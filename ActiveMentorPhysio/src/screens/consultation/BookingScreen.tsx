@@ -40,7 +40,6 @@ const IMG = {
   back: require('../../assets/images/figma/profile/icon_back.png'),
   search: require('../../assets/images/figma/icon_search.png'),
   arrow: require('../../assets/images/figma/icon_arrow_card.png'),
-  star: require('../../assets/images/figma/profile/icon_star.png'),
 };
 
 export const FIND_FILTERS = [
@@ -81,7 +80,11 @@ function matchesFilter(p: any, filter: FindFilter, index: number): boolean {
   }
   if (filter === 'Shoulder Expert') return spec.includes('shoulder');
   if (filter === 'Nearest') return true; // sorted later
-  if (filter === 'Available Today') return index % 2 === 0; // soft demo until API flag exists
+  if (filter === 'Available Today') {
+    const today = new Date().toISOString().split('T')[0];
+    return Array.isArray(p.availability)
+      && p.availability.some((s: any) => s.date === today && !s.isBooked);
+  }
   return true;
 }
 
@@ -92,20 +95,17 @@ function displayName(name: string) {
 
 function PhysioRow({
   item,
-  index,
   onPress,
 }: {
   item: any;
-  index: number;
+  index?: number;
   onPress: () => void;
 }) {
   const photo = physioPhotoSource(item);
   const specialty = item.specialty || item.specialization || 'Physiotherapist';
   const years = item.yearsExperience;
-  const rating = item.rating ?? (4.5 + (index % 4) * 0.1).toFixed(1);
-  const dist = item.distanceKm != null
-    ? `${item.distanceKm} km`
-    : `${(0.8 + index * 0.35).toFixed(1)} km`;
+  const clinic = item.clinics?.[0];
+  const place = clinic?.name || clinic?.branch || clinic?.address || null;
 
   return (
     <TouchableOpacity style={s.card} onPress={onPress} activeOpacity={0.88}>
@@ -114,18 +114,17 @@ function PhysioRow({
         <Text style={s.name} numberOfLines={1}>{displayName(item.name)}</Text>
         <Text style={s.specialty} numberOfLines={1}>{specialty}</Text>
         <View style={s.metaRow}>
-          <View style={s.ratingPill}>
-            <Image source={IMG.star} style={s.starIcon} resizeMode="contain" />
-            <Text style={s.metaText}>{rating}</Text>
-          </View>
-          <Text style={s.dot}>·</Text>
-          <Text style={s.metaText}>{dist}</Text>
-          {years != null && (
+          {years != null ? (
+            <Text style={s.metaText}>{years} yrs</Text>
+          ) : (
+            <Text style={s.metaText}>Physiotherapist</Text>
+          )}
+          {place ? (
             <>
               <Text style={s.dot}>·</Text>
-              <Text style={s.metaText}>{years} yrs</Text>
+              <Text style={s.metaText} numberOfLines={1}>{place}</Text>
             </>
-          )}
+          ) : null}
         </View>
       </View>
       <View style={s.arrowBtn}>
