@@ -20,10 +20,9 @@ export default function OTPScreen({ navigation, route }: Props) {
   const devCode = (route.params as any)?.devCode ?? '';
 
   useEffect(() => {
-    console.log('[OTPScreen] mount', { email, devCode });
-    if (devCode) setCode(devCode);
-    return () => console.log('[OTPScreen] unmount');
-  }, []);
+    // Auto-fill only in local dev when server returns a bypass code
+    if (__DEV__ && devCode) setCode(devCode);
+  }, [devCode]);
 
   const handleVerify = async () => {
     if (code.length < 6) return;

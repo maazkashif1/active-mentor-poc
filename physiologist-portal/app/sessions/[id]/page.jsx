@@ -110,10 +110,12 @@ export default function SessionPage() {
     setPrescribing(true); setError(''); setSuccess('');
     try {
       const patientId = session.patientId._id || session.patientId;
+      const exercise = EXERCISES.find((e) => e.id === selectedExercise);
       const prescription = await api.post('/api/prescriptions', {
         sessionId: id,
         patientId,
         exerciseId: selectedExercise,
+        exerciseName: exercise?.label || selectedExercise,
         targetReps,
         side: targetSide,
         notes,

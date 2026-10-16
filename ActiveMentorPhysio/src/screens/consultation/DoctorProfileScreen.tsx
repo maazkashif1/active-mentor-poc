@@ -20,7 +20,7 @@ import { RouteProp } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSlots, bookSession } from '../../services/sessionService';
 import { physioPhotoSource } from '../../utils/physioAvatar';
-import { clinicImageSource, clinicMapSource, hospitalLogoSource } from '../../utils/hospitals';
+import { clinicImageSource, clinicMapSource } from '../../utils/hospitals';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -43,8 +43,6 @@ const font = (weight: 'Light' | 'Regular' | 'Medium' | 'SemiBold' | 'Bold') =>
 
 const IMG = {
   hero: require('../../assets/images/figma/profile/doctor_hero.png'),
-  agakhan: require('../../assets/images/figma/profile/hospital_agakhan.png'),
-  ziauddin: require('../../assets/images/figma/profile/hospital_ziauddin.png'),
   map: require('../../assets/images/figma/profile/map_bg.png'),
   back: require('../../assets/images/figma/profile/icon_back.png'),
   heart: require('../../assets/images/figma/profile/icon_heart.png'),
@@ -61,28 +59,8 @@ const IMG = {
   starStat: require('../../assets/images/figma/profile/icon_star_stat.png'),
 };
 
-const FALLBACK_CLINICS = [
-  {
-    id: 'aga',
-    name: 'Aga Khan University Hospital',
-    logo: hospitalLogoSource('aga_khan') || IMG.agakhan,
-    logoKey: 'aga_khan',
-    branch: 'Stadium Road / Garden · Karachi',
-    hasLogo: true,
-  },
-  {
-    id: 'zia',
-    name: 'Dr Ziauddin Hospital',
-    logo: hospitalLogoSource('ziauddin') || IMG.ziauddin,
-    logoKey: 'ziauddin',
-    branch: 'Clifton Campus · Karachi',
-    hasLogo: true,
-  },
-];
-
 function clinicsFromPhysio(physio: any) {
   const list = Array.isArray(physio?.clinics) ? physio.clinics.filter((c: any) => c?.name || c?.branch) : [];
-  if (!list.length) return FALLBACK_CLINICS;
   return list.map((c: any, i: number) => {
     const logo = clinicImageSource(c);
     const map = clinicMapSource(c);
@@ -361,35 +339,39 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
           <View style={s.section}>
             <Text style={s.sectionTitle}>Available At</Text>
             <Text style={s.sectionHint}>
-              {usingRealClinics ? 'Select one clinic' : 'Select one (demo clinics until physio adds theirs)'}
+              {usingRealClinics
+                ? 'Select one clinic'
+                : 'This physiotherapist hasn’t listed a clinic yet'}
             </Text>
-            <View style={s.hospitalList}>
-              {clinics.map(h => {
-                const active = h.id === hospitalId;
-                return (
-                  <TouchableOpacity
-                    key={h.id}
-                    style={s.hospitalRow}
-                    onPress={() => setHospitalId(h.id)}
-                    activeOpacity={0.85}
-                  >
-                    <View style={s.clinicMain}>
-                      {h.logo ? (
-                        <Image source={h.logo} style={s.hospitalLogo} resizeMode="contain" />
-                      ) : (
-                        <View style={s.hospitalLogoFallback}>
-                          <Text style={s.hospitalLogoFallbackText} numberOfLines={2}>{h.name}</Text>
-                        </View>
-                      )}
-                      <Text style={s.clinicBranch} numberOfLines={2}>{h.branch}</Text>
-                    </View>
-                    <View style={[s.radio, active && s.radioActive]}>
-                      {active ? <View style={s.radioDot} /> : null}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            {usingRealClinics ? (
+              <View style={s.hospitalList}>
+                {clinics.map(h => {
+                  const active = h.id === hospitalId;
+                  return (
+                    <TouchableOpacity
+                      key={h.id}
+                      style={s.hospitalRow}
+                      onPress={() => setHospitalId(h.id)}
+                      activeOpacity={0.85}
+                    >
+                      <View style={s.clinicMain}>
+                        {h.logo ? (
+                          <Image source={h.logo} style={s.hospitalLogo} resizeMode="contain" />
+                        ) : (
+                          <View style={s.hospitalLogoFallback}>
+                            <Text style={s.hospitalLogoFallbackText} numberOfLines={2}>{h.name}</Text>
+                          </View>
+                        )}
+                        <Text style={s.clinicBranch} numberOfLines={2}>{h.branch}</Text>
+                      </View>
+                      <View style={[s.radio, active && s.radioActive]}>
+                        {active ? <View style={s.radioDot} /> : null}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : null}
           </View>
 
           {/* Branch + live map / place photo */}

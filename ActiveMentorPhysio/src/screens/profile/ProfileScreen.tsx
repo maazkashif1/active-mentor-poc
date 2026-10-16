@@ -134,7 +134,7 @@ export default function ProfileScreen({ navigation }: Props) {
           <Rail
             tag="Move"
             title="Exercises"
-            hint={prescriptions.length ? `${prescriptions.length} prescribed` : 'Starter mobility'}
+            hint={prescriptions.length ? `${prescriptions.length} prescribed` : 'None yet'}
             onPress={() =>
               prescriptions[0]
                 ? navigation.navigate('ExerciseMenu', { prescription: prescriptions[0] })

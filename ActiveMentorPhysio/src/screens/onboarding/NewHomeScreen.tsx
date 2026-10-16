@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAppStore } from '../../stores/appStore';
+import { physioPhotoSource } from '../../utils/physioAvatar';
 
 type Props = { navigation: NativeStackNavigationProp<any> };
 
@@ -42,8 +43,6 @@ const font = (weight: 'Light' | 'Regular' | 'Medium' | 'SemiBold' | 'Bold') =>
 const IMG = {
   hero: require('../../assets/images/figma/hero.png'),
   howBg: require('../../assets/images/figma/how_bg.png'),
-  ahmed: require('../../assets/images/figma/physio_ahmed.png'),
-  sania: require('../../assets/images/figma/physio_sania.png'),
   knee: require('../../assets/images/figma/care_knee.png'),
   careShoulder: require('../../assets/images/figma/care_shoulder.png'),
   elbow: require('../../assets/images/figma/care_elbow.png'),
@@ -68,7 +67,6 @@ const HERO_H = 534 * SCALE;
 const HERO_IMG_H = HERO_H * 1.2978;
 const HERO_IMG_TOP = -HERO_H * 0.2967;
 
-const PLACEHOLDERS = [IMG.ahmed, IMG.sania];
 const CHIPS = ['Knee Rehab', 'Nearest', 'Available Today', 'Shoulder Expert'];
 
 const BODY_JOINTS = [
@@ -135,15 +133,11 @@ const STORY_CHAPTERS = [
   },
 ];
 
-const DEMO_MATCHED = [
-  { name: 'Dr. Ahmed Khan', specialty: 'Knee Specialist • Sports Injury', dist: '2.4 km away' },
-  { name: 'Dr. Ahmed Khan', specialty: 'Knee Specialist • Sports Injury', dist: '2.4 km away' },
-];
-
-const DEMO_NEARBY = [
-  { name: 'Dr. Sania Ali', specialty: 'Musculoskeletal Physiotherapist', dist: '1.2 km away' },
-  { name: 'Dr. Ahmed Khan', specialty: 'Knee Specialist • Sports Injury', dist: '0.8 km away' },
-];
+function clinicHint(physio: any): string {
+  const c = Array.isArray(physio?.clinics) ? physio.clinics.find((x: any) => x?.city || x?.name) : null;
+  if (!c) return '';
+  return c.city || c.name || '';
+}
 
 function greetingForHour(h: number) {
   if (h < 5) return "Hey, it's late —";
@@ -277,10 +271,10 @@ function mobilityPillLabel(progress: any[], prescriptions: any[]): string {
   const dates = activityDates(progress);
   if (dates.has(todayKey())) return 'Mobility done today';
   const primary = prescriptions[0];
+  if (!primary && !progress.length) return 'No exercise prescribed yet';
   const fromProgress = progress[0];
   const mins = mobilityMinutes(primary?.targetReps ?? fromProgress?.targetReps);
-  if (prescriptions.length || progress.length) return `${mins} min mobility due`;
-  return `${mins} min starter mobility`;
+  return `${mins} min mobility due`;
 }
 
 function ArrowBtn({ size = 25 }: { size?: number }) {
@@ -300,7 +294,7 @@ function PhysioCard({
 }: {
   name: string;
   specialty: string;
-  dist: string;
+  dist?: string;
   photo: any;
   onPress: () => void;
 }) {
@@ -330,7 +324,7 @@ function PhysioCard({
                   <Image source={IMG.shoulder} style={s.badgeTiny} />
                 </View>
               </View>
-              <Text style={s.physioDist}>{dist}</Text>
+              {dist ? <Text style={s.physioDist}>{dist}</Text> : null}
             </View>
           </View>
           <ArrowBtn />
@@ -423,7 +417,7 @@ export default function NewHomeScreen({ navigation }: Props) {
     if (prescriptions[0]) {
       navigation.navigate('ExerciseMenu' as any, { prescription: prescriptions[0] });
     } else {
-      navigation.navigate('ExerciseMenu' as any);
+      navigation.navigate('Prescriptions' as any);
     }
   };
 
@@ -488,41 +482,27 @@ export default function NewHomeScreen({ navigation }: Props) {
     navigation.navigate('Booking' as any);
   };
 
-  const displayName = firstName || 'Maaz';
-  const initial = (displayName[0] || 'M').toUpperCase();
+  const displayName = firstName || 'there';
+  const initial = (firstName?.[0] || '?').toUpperCase();
   // Figma: status 44 + 21 = content top 65; CTA at contentTop + 301 + 51 = 417
   const heroContentTop = Math.max(insets.top, 44 * SCALE) + 21 * SCALE;
   const heroCtaTop = heroContentTop + 301 * SCALE + 51 * SCALE;
 
-  const matched = (physios.length
-    ? physios.slice(0, 4).map((p, i) => ({
-        ...p,
-        name: p.name,
-        specialty: p.specialty || p.specialization || 'Physiotherapist',
-        dist: `${(2.4 - i * 0.4).toFixed(1)} km away`,
-        cardPhoto: PLACEHOLDERS[i % 2],
-      }))
-    : DEMO_MATCHED.map((d, i) => ({
-        ...d,
-        specialty: d.specialty,
-        cardPhoto: PLACEHOLDERS[i % 2],
-        localPhoto: PLACEHOLDERS[i % 2],
-      })));
+  const matched = physios.slice(0, 4).map(p => ({
+    ...p,
+    name: p.name,
+    specialty: p.specialty || p.specialization || 'Physiotherapist',
+    dist: clinicHint(p),
+    cardPhoto: physioPhotoSource(p),
+  }));
 
-  const nearby = (physios.length
-    ? [...physios].reverse().slice(0, 4).map((p, i) => ({
-        ...p,
-        name: p.name,
-        specialty: p.specialty || p.specialization || 'Physiotherapist',
-        dist: `${(1.2 - i * 0.2).toFixed(1)} km away`,
-        cardPhoto: PLACEHOLDERS[(i + 1) % 2],
-      }))
-    : DEMO_NEARBY.map((d, i) => ({
-        ...d,
-        specialty: d.specialty,
-        cardPhoto: PLACEHOLDERS[(i + 1) % 2],
-        localPhoto: PLACEHOLDERS[(i + 1) % 2],
-      })));
+  const nearby = [...physios].reverse().slice(0, 4).map(p => ({
+    ...p,
+    name: p.name,
+    specialty: p.specialty || p.specialization || 'Physiotherapist',
+    dist: clinicHint(p),
+    cardPhoto: physioPhotoSource(p),
+  }));
 
   const TABS: { label: string; icon: any; action?: () => void; screen?: string }[] = [
     { label: 'Home', icon: IMG.home },
@@ -557,10 +537,14 @@ export default function NewHomeScreen({ navigation }: Props) {
               <View style={s.topCircle}>
                 <Text style={s.topInitial}>{initial}</Text>
               </View>
-              <View style={s.topCircle}>
+              <TouchableOpacity
+                style={s.topCircle}
+                onPress={() => navigation.navigate('Prescriptions' as any)}
+                activeOpacity={0.85}
+              >
                 <Image source={IMG.bell} style={s.bellIcon} resizeMode="contain" />
-                <View style={s.bellDot} />
-              </View>
+                {unreadPlans > 0 ? <View style={s.bellDot} /> : null}
+              </TouchableOpacity>
             </View>
 
             {/* Frame 104:627 — gap 20 between Hello and lower block */}
@@ -637,11 +621,11 @@ export default function NewHomeScreen({ navigation }: Props) {
             {hasCare ? 'Your body, this morning' : 'Start your recovery'}
           </Text>
           <Text style={s.careTodaySub}>
-            {careArea
-              ? `${careArea} plan · Day ${planDay} of 14`
+            {prescriptions.length
+              ? `${careArea ? `${careArea} · ` : ''}Day ${planDay} of your plan`
               : hasCare
-                ? 'Exercises and sessions live here — not only booking.'
-                : 'Two paths: find a specialist, or start moving today.'}
+                ? 'Sessions live here — exercises appear after your physio prescribes.'
+                : 'Find a specialist and book your first session.'}
           </Text>
 
           <View style={s.pillRow}>
@@ -684,23 +668,23 @@ export default function NewHomeScreen({ navigation }: Props) {
               onPress={() =>
                 hasCare
                   ? navigation.navigate('ConsultHistory' as any)
-                  : goToExercises()
+                  : goToFind()
               }
               activeOpacity={0.88}
             >
               <Text style={s.forkTag}>Continue</Text>
               <Text style={s.forkTitle}>
-                {hasCare ? 'Your care' : 'Self-care'}
+                {hasCare ? 'Your care' : 'Get started'}
               </Text>
               <Text style={s.forkBody}>
                 {hasCare
                   ? streak > 0
                     ? `${streak}-day streak · sessions & plans`
                     : 'Sessions, history & prescriptions'
-                  : 'Browse starter mobility'}
+                  : 'Book a session to get a care plan'}
               </Text>
               <Text style={s.forkCta}>
-                {hasCare ? 'Open history →' : 'Start moving →'}
+                {hasCare ? 'Open history →' : 'Find a physio →'}
               </Text>
             </TouchableOpacity>
 
@@ -722,9 +706,17 @@ export default function NewHomeScreen({ navigation }: Props) {
 
           {/* Deeper companion links */}
           <View style={s.companionRow}>
-            <TouchableOpacity style={s.companionChip} onPress={goToExercises} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={s.companionChip}
+              onPress={prescriptions.length ? goToExercises : () => goToFind()}
+              activeOpacity={0.85}
+            >
               <Text style={s.companionChipText}>
-                {mobilityDoneToday ? 'Review plan' : 'Do mobility'}
+                {prescriptions.length
+                  ? mobilityDoneToday
+                    ? 'Review plan'
+                    : 'Start exercise'
+                  : 'Get a plan'}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -765,18 +757,24 @@ export default function NewHomeScreen({ navigation }: Props) {
             }
             onSeeMore={() => goToFind('Knee Rehab')}
           />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.physioList}>
-            {matched.map((p, i) => (
-              <PhysioCard
-                key={`m-${p._id || i}`}
-                name={p.name}
-                specialty={p.specialty}
-                dist={p.dist}
-                photo={p.cardPhoto}
-                onPress={() => goToDoctor(p, p.cardPhoto)}
-              />
-            ))}
-          </ScrollView>
+          {matched.length ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.physioList}>
+              {matched.map((p, i) => (
+                <PhysioCard
+                  key={`m-${p._id || i}`}
+                  name={p.name}
+                  specialty={p.specialty}
+                  dist={p.dist}
+                  photo={p.cardPhoto}
+                  onPress={() => goToDoctor(p)}
+                />
+              ))}
+            </ScrollView>
+          ) : (
+            <TouchableOpacity style={s.emptyPhysio} onPress={() => goToFind()} activeOpacity={0.85}>
+              <Text style={s.emptyPhysioText}>No physiotherapists yet — tap to search</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* D · Body map — where it hurts → care sheet */}
@@ -819,18 +817,24 @@ export default function NewHomeScreen({ navigation }: Props) {
             sub="Discover trusted physiotherapists nearby and find the right care for your needs."
             onSeeMore={() => goToFind('Nearest')}
           />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.physioList}>
-            {nearby.map((p, i) => (
-              <PhysioCard
-                key={`n-${p._id || i}`}
-                name={p.name}
-                specialty={p.specialty}
-                dist={p.dist}
-                photo={p.cardPhoto}
-                onPress={() => goToDoctor(p, p.cardPhoto)}
-              />
-            ))}
-          </ScrollView>
+          {nearby.length ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.physioList}>
+              {nearby.map((p, i) => (
+                <PhysioCard
+                  key={`n-${p._id || i}`}
+                  name={p.name}
+                  specialty={p.specialty}
+                  dist={p.dist}
+                  photo={p.cardPhoto}
+                  onPress={() => goToDoctor(p)}
+                />
+              ))}
+            </ScrollView>
+          ) : (
+            <TouchableOpacity style={s.emptyPhysio} onPress={() => goToFind()} activeOpacity={0.85}>
+              <Text style={s.emptyPhysioText}>No physiotherapists yet — tap to search</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* C · Story reel — recovery chapters (replaces How We Work) */}
@@ -1341,6 +1345,19 @@ const s = StyleSheet.create({
 
   // Figma card gap: 239.63 − 211.63 ≈ 28
   physioList: { gap: 28 * SCALE, paddingRight: H_PAD },
+  emptyPhysio: {
+    backgroundColor: '#f7f8fb',
+    borderRadius: 14,
+    paddingVertical: 28 * SCALE,
+    paddingHorizontal: 16 * SCALE,
+    alignItems: 'center',
+  },
+  emptyPhysioText: {
+    fontFamily: font('Light'),
+    fontSize: 13 * SCALE,
+    color: 'rgba(51,51,51,0.55)',
+    textAlign: 'center',
+  },
   physioCard: {
     borderRadius: 13,
     overflow: 'hidden',

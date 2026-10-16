@@ -9,7 +9,7 @@ router.post('/', verifyToken, async (req, res) => {
   try {
     if (req.user.role !== 'physiologist') return res.status(403).json({ message: 'Forbidden' });
     const {
-      sessionId, patientId, exerciseId, raiseAngleThreshold, lowerAngleThreshold,
+      sessionId, patientId, exerciseId, exerciseName, raiseAngleThreshold, lowerAngleThreshold,
       minAdaptedAngle, targetReps, notes, side,
     } = req.body;
     const prescription = await Prescription.create({
@@ -17,6 +17,7 @@ router.post('/', verifyToken, async (req, res) => {
       patientId,
       physiologistId: req.user.id,
       exerciseId,
+      exerciseName: exerciseName || '',
       raiseAngleThreshold,
       lowerAngleThreshold,
       minAdaptedAngle: minAdaptedAngle ?? null,

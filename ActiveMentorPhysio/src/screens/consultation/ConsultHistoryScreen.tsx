@@ -112,12 +112,6 @@ export default function ConsultHistoryScreen({ navigation }: Props) {
             >
               <Text style={s.ctaText}>Find a Physiotherapist</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('ExerciseMenu' as any)}
-              activeOpacity={0.85}
-            >
-              <Text style={s.secondaryLink}>Or browse starter exercises</Text>
-            </TouchableOpacity>
           </View>
         }
       />

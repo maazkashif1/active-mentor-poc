@@ -61,6 +61,7 @@ router.get('/progress', verifyToken, async (req, res) => {
       return {
         prescriptionId: p._id,
         exerciseId: p.exerciseId,
+        exerciseName: p.exerciseName || '',
         targetReps: p.targetReps,
         raiseAngleThreshold: p.raiseAngleThreshold,
         sessionInfo: p.sessionId,

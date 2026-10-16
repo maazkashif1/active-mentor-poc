@@ -5,6 +5,7 @@ const prescriptionSchema = new mongoose.Schema({
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   physiologistId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   exerciseId: { type: String, default: 'hand_raise' },
+  exerciseName: { type: String, default: '' },
   raiseAngleThreshold: { type: Number, default: 90 },
   lowerAngleThreshold: { type: Number, default: 30 },
   minAdaptedAngle: { type: Number, default: null },    // physio floor for adaptive target

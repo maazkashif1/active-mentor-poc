@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAppStore } from '../../stores/appStore';
+import { exerciseDisplayName } from '../../utils/exerciseLabels';
 
 type Props = { navigation: NativeStackNavigationProp<any> };
 
@@ -31,12 +32,6 @@ const font = (weight: 'Light' | 'Regular' | 'Medium' | 'SemiBold' | 'Bold') =>
     android: `Poppins-${weight}`,
     default: undefined,
   });
-
-const EXERCISE_NAMES: Record<string, string> = {
-  hand_raise: 'Hand Raise',
-  squat: 'Squat',
-  push_up: 'Push Up',
-};
 
 export default function PrescriptionsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -85,12 +80,11 @@ export default function PrescriptionsScreen({ navigation }: Props) {
             onPress={() => navigation.navigate('ExerciseMenu', { prescription: item })}
             activeOpacity={0.88}
           >
-            <Text style={s.exerciseName}>
-              {EXERCISE_NAMES[item.exerciseId as string] ?? 'Hand Raise'}
-            </Text>
+            <Text style={s.exerciseName}>{exerciseDisplayName(item)}</Text>
             <Text style={s.detail}>Target · {item.targetReps} reps</Text>
             <Text style={s.detail}>
               Raise {item.raiseAngleThreshold}° · Lower {item.lowerAngleThreshold}°
+              {item.side && item.side !== 'both' ? ` · ${item.side} side` : ''}
             </Text>
             {item.notes ? <Text style={s.notes}>{item.notes}</Text> : null}
             <View style={s.cardCta}>
@@ -107,10 +101,10 @@ export default function PrescriptionsScreen({ navigation }: Props) {
             </Text>
             <TouchableOpacity
               style={s.cta}
-              onPress={() => navigation.navigate('ExerciseMenu' as any)}
+              onPress={() => navigation.navigate('Booking' as any)}
               activeOpacity={0.85}
             >
-              <Text style={s.ctaText}>Browse starter exercises</Text>
+              <Text style={s.ctaText}>Find a physiotherapist</Text>
             </TouchableOpacity>
           </View>
         }

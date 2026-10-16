@@ -444,9 +444,11 @@ async function run() {
       patientId: patient._id,
       physiologistId: session.physiologistId,
       exerciseId: 'hand_raise',
+      exerciseName: 'Hand Raise',
       raiseAngleThreshold: raiseAngle,
       lowerAngleThreshold: lowerAngle,
       targetReps,
+      side: patient.side || 'both',
       notes: `${careArea} rehab — controlled movement, pain-free range.`,
     });
     presCount++;

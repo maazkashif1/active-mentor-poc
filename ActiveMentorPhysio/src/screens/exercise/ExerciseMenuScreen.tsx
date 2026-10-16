@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,10 +13,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
-
-const EXERCISES = [
-  { id: 'hand_raise', name: 'Hand Raise', description: 'Shoulder mobility and strength' },
-];
+import { useAppStore } from '../../stores/appStore';
+import { exerciseDisplayName } from '../../utils/exerciseLabels';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -38,11 +36,17 @@ const font = (weight: 'Light' | 'Regular' | 'Medium' | 'SemiBold' | 'Bold') =>
 
 export default function ExerciseMenuScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
-  const prescription = route.params?.prescription;
+  const fromRoute = route.params?.prescription;
+  const prescriptions = useAppStore(s => s.prescriptions);
+  const fetchPrescriptions = useAppStore(s => s.fetchPrescriptions);
 
-  const list = prescription
-    ? [{ id: prescription.exerciseId || 'hand_raise', name: 'Hand Raise', description: 'As prescribed by your physiologist' }]
-    : EXERCISES;
+  useEffect(() => {
+    if (!fromRoute) fetchPrescriptions();
+  }, [fromRoute, fetchPrescriptions]);
+
+  const list = fromRoute
+    ? [fromRoute]
+    : prescriptions;
 
   return (
     <View style={[s.root, { paddingTop: insets.top + 8 }]}>
@@ -61,36 +65,60 @@ export default function ExerciseMenuScreen({ navigation, route }: Props) {
       >
         <Text style={s.eyebrow}>Care plan</Text>
         <Text style={s.heading}>
-          <Text style={s.headingMed}>{prescription ? 'Your prescribed ' : ''}</Text>
-          <Text style={s.headingLight}>{prescription ? 'exercise' : 'Exercises'}</Text>
+          <Text style={s.headingMed}>{list.length ? 'Your prescribed ' : 'No '}</Text>
+          <Text style={s.headingLight}>{list.length ? 'exercise' : 'prescriptions yet'}</Text>
         </Text>
         <Text style={s.subhead}>
-          {prescription
+          {list.length
             ? 'Guided by your physiologist — camera checks your form.'
-            : 'Starter mobility you can do between sessions.'}
+            : 'After your session, your physio will prescribe exercises here.'}
         </Text>
 
-        {list.map(ex => (
+        {list.length === 0 ? (
           <TouchableOpacity
-            key={ex.id}
-            style={s.card}
-            onPress={() => navigation.navigate('Exercise', { exercise: ex, prescription })}
+            style={s.emptyCard}
+            onPress={() => navigation.navigate('Booking' as any)}
             activeOpacity={0.88}
           >
-            <Text style={s.exName}>{ex.name}</Text>
-            <Text style={s.exDesc}>{ex.description}</Text>
-            {prescription ? (
-              <Text style={s.prescDetail}>
-                {prescription.targetReps} reps · Raise {prescription.raiseAngleThreshold}° · Lower{' '}
-                {prescription.lowerAngleThreshold}°
-              </Text>
-            ) : null}
+            <Text style={s.exName}>Book a session</Text>
+            <Text style={s.exDesc}>Find a physiotherapist to get a care plan.</Text>
             <View style={s.cardCta}>
-              <Text style={s.start}>Start with camera</Text>
+              <Text style={s.start}>Browse physios</Text>
               <Text style={s.startArrow}>→</Text>
             </View>
           </TouchableOpacity>
-        ))}
+        ) : (
+          list.map((prescription: any) => {
+            const name = exerciseDisplayName(prescription);
+            const exercise = {
+              id: prescription.exerciseId || 'hand_raise',
+              name,
+              description: prescription.notes?.trim() || 'As prescribed by your physiologist',
+            };
+            return (
+              <TouchableOpacity
+                key={prescription._id || exercise.id}
+                style={s.card}
+                onPress={() => navigation.navigate('Exercise', { exercise, prescription })}
+                activeOpacity={0.88}
+              >
+                <Text style={s.exName}>{name}</Text>
+                <Text style={s.exDesc}>{exercise.description}</Text>
+                <Text style={s.prescDetail}>
+                  {prescription.targetReps} reps · Raise {prescription.raiseAngleThreshold}° · Lower{' '}
+                  {prescription.lowerAngleThreshold}°
+                  {prescription.side && prescription.side !== 'both'
+                    ? ` · ${prescription.side} side`
+                    : ''}
+                </Text>
+                <View style={s.cardCta}>
+                  <Text style={s.start}>Start with camera</Text>
+                  <Text style={s.startArrow}>→</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })
+        )}
       </ScrollView>
     </View>
   );
@@ -139,6 +167,12 @@ const s = StyleSheet.create({
     borderRadius: 18,
     padding: 20 * SCALE,
     marginBottom: 14 * SCALE,
+    gap: 6 * SCALE,
+  },
+  emptyCard: {
+    backgroundColor: '#f7f8fb',
+    borderRadius: 18,
+    padding: 20 * SCALE,
     gap: 6 * SCALE,
   },
   exName: {

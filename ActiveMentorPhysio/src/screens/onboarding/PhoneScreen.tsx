@@ -31,7 +31,10 @@ export default function PhoneScreen({ navigation }: Props) {
     try {
       const res = await api.post('/auth/send-otp', { email });
       console.log('[PhoneScreen] send-otp ✓', res.data);
-      navigation.navigate('OTP', { email, devCode: res.data.devCode });
+      navigation.navigate('OTP', {
+        email,
+        ...(__DEV__ && res.data?.devCode ? { devCode: res.data.devCode } : {}),
+      });
     } catch (e: any) {
       console.log('[PhoneScreen] send-otp ✗', e?.response?.status, e?.response?.data);
       setError(e?.response?.data?.message || 'Could not send code. Try again.');
