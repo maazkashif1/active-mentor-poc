@@ -161,6 +161,13 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
           >
             <Text style={s.joinBtnText}>Join meeting</Text>
           </TouchableOpacity>
+        ) : (session.status === 'pending' || session.status === 'active') && !session.meetingUrl ? (
+          <View style={s.noMeetBanner}>
+            <Text style={s.noMeetTitle}>No Meet link yet</Text>
+            <Text style={s.noMeetBody}>
+              Your session is booked. The join link appears here once your physiotherapist connects Google Calendar.
+            </Text>
+          </View>
         ) : null}
 
         {session.status === 'missed' ? (
@@ -342,6 +349,25 @@ const s = StyleSheet.create({
     fontWeight: '500',
     fontSize: 16 * SCALE,
     color: INK,
+  },
+  noMeetBanner: {
+    marginTop: 28 * SCALE,
+    backgroundColor: '#f7f8fb',
+    borderRadius: 16,
+    padding: 16 * SCALE,
+    gap: 6 * SCALE,
+  },
+  noMeetTitle: {
+    fontFamily: font('Medium'),
+    fontSize: 14 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
+  noMeetBody: {
+    fontFamily: font('Light'),
+    fontSize: 13 * SCALE,
+    lineHeight: 19 * SCALE,
+    color: 'rgba(51,51,51,0.55)',
   },
   missedBanner: {
     marginTop: 28 * SCALE,

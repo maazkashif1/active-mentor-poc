@@ -4,15 +4,27 @@ const Session = require('../models/sessionModel');
 const Prescription = require('../models/prescriptionModel');
 const ExerciseResult = require('../models/exerciseResultModel');
 const verifyToken = require('../middleware/auth');
+const { isSlotOpenAndFuture } = require('../services/scheduleService');
 
 const router = express.Router();
+
+function openFutureSlots(availability = []) {
+  return (availability || [])
+    .filter(s => isSlotOpenAndFuture(s))
+    .sort((a, b) => (a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date)));
+}
 
 // List all physiologists (patient use)
 router.get('/all', verifyToken, async (req, res) => {
   try {
     const physios = await User.find({ role: 'physiologist' })
       .select('name email specialty photo bio yearsExperience education clinics availability');
-    res.json(physios);
+    // Trim availability to open future slots so list filters (e.g. Available Today) work
+    res.json(physios.map(p => {
+      const obj = p.toObject();
+      obj.availability = openFutureSlots(obj.availability);
+      return obj;
+    }));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -23,7 +35,7 @@ router.get('/slots/:id', verifyToken, async (req, res) => {
   try {
     const physio = await User.findById(req.params.id).select('availability');
     if (!physio) return res.status(404).json({ message: 'Physiologist not found' });
-    res.json(physio.availability);
+    res.json(openFutureSlots(physio.availability));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

@@ -16,6 +16,7 @@ import OnboardingHeader from '../../components/OnboardingHeader';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../../config/api';
 import { bookSession } from '../../services/sessionService';
+import { useAppStore } from '../../stores/appStore';
 
 type Props = NativeStackScreenProps<any, any>;
 
@@ -41,9 +42,22 @@ const QUESTIONS = [
 export default function SafetyCheckScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const fromBooking = !!(route.params as any)?.fromBooking;
+  const fetchSessions = useAppStore(s => s.fetchSessions);
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<string[]>([]);
   const [showWarning, setShowWarning] = useState(false);
+
+  const goHome = () =>
+    navigation.reset({ index: 0, routes: [{ name: 'NewHome' }] });
+
+  const goHomeThenSession = (session: any) =>
+    navigation.reset({
+      index: 1,
+      routes: [
+        { name: 'NewHome' },
+        { name: 'SessionDetail', params: { session } },
+      ],
+    });
 
   const answer = (val: string) => {
     const next = [...answers, val];
@@ -70,7 +84,7 @@ export default function SafetyCheckScreen({ navigation, route }: Props) {
   };
 
   const completeOnboarding = async (safetyAnswers: string[]) => {
-    const { area, side, surgery, onset, pain, returnTo } = (route.params ?? {}) as any;
+    const { area, side, surgery, onset, pain } = (route.params ?? {}) as any;
     try {
       const stored = await AsyncStorage.getItem('userProfile');
       const profile = stored ? JSON.parse(stored) : {};
@@ -111,11 +125,25 @@ export default function SafetyCheckScreen({ navigation, route }: Props) {
           ]
             .filter(Boolean)
             .join('\n');
-          await bookSession(pending.physioId, pending.date, pending.time, visitNote);
+          const booked = await bookSession(
+            pending.physioId,
+            pending.date,
+            pending.time,
+            visitNote,
+          );
           await AsyncStorage.removeItem('pendingBooking');
-          Alert.alert('Booked!', 'Your session has been scheduled.', [
-            { text: 'OK', onPress: () => navigation.replace('ConsultHistory') },
-          ]);
+          fetchSessions().catch(() => {});
+          const hasMeet = !!booked?.meetingUrl;
+          Alert.alert(
+            'Booked!',
+            hasMeet
+              ? 'Your session is scheduled. You can join with Google Meet from the session details.'
+              : 'Your session is scheduled. A Meet link will appear once your physiotherapist connects Google Calendar.',
+            [
+              { text: 'View session', onPress: () => goHomeThenSession(booked) },
+              { text: 'Home', style: 'cancel', onPress: goHome },
+            ],
+          );
           return;
         } catch (e: any) {
           await AsyncStorage.removeItem('pendingBooking');
@@ -123,15 +151,15 @@ export default function SafetyCheckScreen({ navigation, route }: Props) {
             'Intake saved',
             e?.response?.data?.message ||
               'Could not complete booking. Please try again from the doctor profile.',
-            [{ text: 'OK', onPress: () => navigation.replace(returnTo || 'NewHome') }],
+            [{ text: 'OK', onPress: goHome }],
           );
           return;
         }
       }
 
-      navigation.replace(returnTo || 'NewHome');
+      goHome();
     } catch {
-      navigation.replace((route.params as any)?.returnTo || 'NewHome');
+      goHome();
     }
   };
 

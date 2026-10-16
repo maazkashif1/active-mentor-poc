@@ -59,7 +59,11 @@ export default function ConsultHistoryScreen({ navigation }: Props) {
   return (
     <View style={[s.container, { paddingTop: insets.top + 8 }]}>
       <StatusBar barStyle="dark-content" />
-      <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.85}>
+      <TouchableOpacity
+        style={s.backBtn}
+        onPress={() => navigation.navigate('NewHome' as any)}
+        activeOpacity={0.85}
+      >
         <Image
           source={require('../../assets/images/figma/profile/icon_back.png')}
           style={s.backIcon}
@@ -94,9 +98,13 @@ export default function ConsultHistoryScreen({ navigation }: Props) {
             <Text style={s.meta}>
               {item.slotDate} · {item.slotTime}
             </Text>
-            {item.status === 'approved' && (
+            {item.meetingUrl && (item.status === 'pending' || item.status === 'active') ? (
+              <Text style={s.action}>Join meeting →</Text>
+            ) : item.status === 'pending' && !item.meetingUrl ? (
+              <Text style={s.actionMuted}>Waiting for Meet link</Text>
+            ) : item.status === 'approved' ? (
               <Text style={s.action}>View summary →</Text>
-            )}
+            ) : null}
           </TouchableOpacity>
         )}
         ListEmptyComponent={
@@ -192,6 +200,12 @@ const s = StyleSheet.create({
     fontFamily: font('Medium'),
     fontSize: 12 * SCALE,
     color: INK,
+    marginTop: 8 * SCALE,
+  },
+  actionMuted: {
+    fontFamily: font('Light'),
+    fontSize: 12 * SCALE,
+    color: 'rgba(51,51,51,0.45)',
     marginTop: 8 * SCALE,
   },
   emptyWrap: {

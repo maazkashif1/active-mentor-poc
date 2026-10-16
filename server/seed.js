@@ -15,6 +15,7 @@ const Prescription = require('./models/prescriptionModel');
 const ExerciseResult = require('./models/exerciseResultModel');
 const ChatThread = require('./models/chatThreadModel');
 const ChatMessage = require('./models/chatMessageModel');
+const { DEFAULT_SCHEDULE, generateSlotsFromSchedule } = require('./services/scheduleService');
 
 const PHYSIO_PW = 'Password123';
 const PATIENT_PW = 'Patient123';
@@ -39,11 +40,6 @@ function randInt(min, max) {
 function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5);
 }
-
-const TIMES = [
-  '09:00', '09:30', '10:00', '10:30', '11:00',
-  '14:00', '14:30', '15:00', '15:30', '16:00', '17:00',
-];
 
 const CARE_AREAS = ['knee', 'shoulder', 'elbow', 'wrist', 'ankle', 'back'];
 
@@ -294,20 +290,8 @@ const PATIENTS = [
   { name: 'Mariam Yousaf', email: 'mariam.yousaf@yopmail.com', city: 'Quetta', careArea: 'ankle', side: 'both' },
 ];
 
-function buildAvailability() {
-  const slots = [];
-  for (let d = 0; d <= 21; d++) {
-    const date = new Date();
-    date.setHours(12, 0, 0, 0);
-    date.setDate(date.getDate() + d);
-    if (date.getDay() === 0) continue; // skip Sundays
-    const dateStr = date.toISOString().split('T')[0];
-    const dayTimes = shuffle(TIMES).slice(0, randInt(4, 6));
-    for (const time of dayTimes) {
-      slots.push({ date: dateStr, time, isBooked: false });
-    }
-  }
-  return slots;
+function buildAvailability(schedule = DEFAULT_SCHEDULE) {
+  return generateSlotsFromSchedule(schedule, { daysAhead: 42 });
 }
 
 async function run() {
@@ -348,15 +332,8 @@ async function run() {
       education: p.education,
       clinics: p.clinics,
       photo: '',
-      schedule: {
-        workDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
-        startTime: '09:00',
-        endTime: '17:00',
-        breakStart: '13:00',
-        breakEnd: '14:00',
-        duration: 30,
-      },
-      availability: buildAvailability(),
+      schedule: { ...DEFAULT_SCHEDULE },
+      availability: buildAvailability(DEFAULT_SCHEDULE),
     });
     physioDocs.push(doc);
     console.log(`  + ${p.name}  (${p.specialty})  slots=${doc.availability.length}`);

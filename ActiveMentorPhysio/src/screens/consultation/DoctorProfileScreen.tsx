@@ -75,7 +75,12 @@ function clinicsFromPhysio(physio: any) {
 
 function parseTime(t: string): number {
   const [h, m] = t.split(':').map(Number);
-  return h * 60 + m;
+  return (h || 0) * 60 + (m || 0);
+}
+
+function localTodayStr() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
 }
 
 function to12h(t: string): string {
@@ -86,10 +91,10 @@ function to12h(t: string): string {
 }
 
 function isFuture(date: string, time: string): boolean {
-  const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
+  const todayStr = localTodayStr();
   if (date > todayStr) return true;
   if (date < todayStr) return false;
+  const now = new Date();
   return parseTime(time) > now.getHours() * 60 + now.getMinutes();
 }
 
@@ -102,8 +107,10 @@ function getPeriod(time: string): 'Morning' | 'Afternoon' | 'Evening' {
 
 function buildDateChips(slots: any[]) {
   const seen = new Set<string>();
-  const chips: { isoDate: string; num: string; weekday: string; month: string }[] = [];
-  const sorted = [...slots].sort((a, b) => a.date.localeCompare(b.date));
+  const chips: { isoDate: string; num: string; weekday: string; month: string; year: number; monthIndex: number }[] = [];
+  const sorted = [...slots].sort((a, b) =>
+    a.date === b.date ? String(a.time).localeCompare(String(b.time)) : a.date.localeCompare(b.date),
+  );
   for (const s of sorted) {
     if (seen.has(s.date)) continue;
     seen.add(s.date);
@@ -111,11 +118,13 @@ function buildDateChips(slots: any[]) {
     chips.push({
       isoDate: s.date,
       num: String(d.getDate()),
-      weekday: d.toLocaleDateString('en-US', { weekday: 'long' }),
+      weekday: d.toLocaleDateString('en-US', { weekday: 'short' }),
       month: d.toLocaleDateString('en-US', { month: 'long' }),
+      year: d.getFullYear(),
+      monthIndex: d.getMonth(),
     });
   }
-  return chips.slice(0, 14);
+  return chips;
 }
 
 function displayName(physio: any) {
@@ -150,8 +159,16 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
       try {
         const data = await getSlots(physio._id);
         if (cancelled) return;
-        const filtered = (data || []).filter((s: any) => !s.isBooked && isFuture(s.date, s.time));
+        // API already returns open future slots; keep a client-side guard
+        const filtered = (data || [])
+          .filter((s: any) => !s.isBooked && isFuture(s.date, s.time))
+          .sort((a: any, b: any) =>
+            a.date === b.date ? String(a.time).localeCompare(String(b.time)) : a.date.localeCompare(b.date),
+          );
         setSlots(filtered);
+        setSelectedDate('');
+        setSelectedSlot(null);
+        setMonthOffset(0);
       } catch {
         if (!cancelled) Alert.alert('Could not load availability');
       } finally {
@@ -162,17 +179,34 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
   }, [physio?._id]);
 
   const dateChips = useMemo(() => buildDateChips(slots), [slots]);
-  const activeDate = selectedDate || dateChips[0]?.isoDate || '';
-  const slotsForDate = slots.filter(s => s.date === activeDate);
-  const today = new Date().toISOString().split('T')[0];
+  const viewMonth = useMemo(() => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + monthOffset);
+    return d;
+  }, [monthOffset]);
+  const visibleChips = useMemo(
+    () =>
+      dateChips.filter(
+        c => c.year === viewMonth.getFullYear() && c.monthIndex === viewMonth.getMonth(),
+      ),
+    [dateChips, viewMonth],
+  );
+  const activeDate = selectedDate || visibleChips[0]?.isoDate || dateChips[0]?.isoDate || '';
+  const slotsForDate = slots
+    .filter(s => s.date === activeDate)
+    .sort((a, b) => String(a.time).localeCompare(String(b.time)));
+  const today = localTodayStr();
   const availableToday = slots.some(s => s.date === today);
   const hospital = clinics.find(h => h.id === hospitalId) || clinics[0];
-  const monthLabel =
-    dateChips.find(c => c.isoDate === activeDate)?.month ||
-    new Date(new Date().getFullYear(), new Date().getMonth() + monthOffset, 1).toLocaleDateString(
-      'en-US',
-      { month: 'long' },
-    );
+  const monthLabel = viewMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const minMonthOffset = 0;
+  const maxMonthOffset = useMemo(() => {
+    if (!dateChips.length) return 0;
+    const last = dateChips[dateChips.length - 1];
+    const now = new Date();
+    return (last.year - now.getFullYear()) * 12 + (last.monthIndex - now.getMonth());
+  }, [dateChips]);
 
   const education = physio?.education?.[0];
   const degree = education?.degree
@@ -399,11 +433,29 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
                 <Text style={s.sectionHint}>Only available dates are shown</Text>
               </View>
               <View style={s.monthNav}>
-                <TouchableOpacity onPress={() => setMonthOffset(m => m - 1)} hitSlop={8}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setMonthOffset(m => Math.max(minMonthOffset, m - 1));
+                    setSelectedDate('');
+                    setSelectedSlot(null);
+                  }}
+                  disabled={monthOffset <= minMonthOffset}
+                  hitSlop={8}
+                  style={monthOffset <= minMonthOffset ? { opacity: 0.35 } : undefined}
+                >
                   <Image source={IMG.chevron} style={[s.chevron, { transform: [{ scaleX: -1 }] }]} />
                 </TouchableOpacity>
                 <Text style={s.monthLabel}>{monthLabel}</Text>
-                <TouchableOpacity onPress={() => setMonthOffset(m => m + 1)} hitSlop={8}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setMonthOffset(m => Math.min(maxMonthOffset, m + 1));
+                    setSelectedDate('');
+                    setSelectedSlot(null);
+                  }}
+                  disabled={monthOffset >= maxMonthOffset}
+                  hitSlop={8}
+                  style={monthOffset >= maxMonthOffset ? { opacity: 0.35 } : undefined}
+                >
                   <Image source={IMG.chevron} style={s.chevron} />
                 </TouchableOpacity>
               </View>
@@ -411,10 +463,16 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
             {loading ? (
               <ActivityIndicator color={INK} style={{ marginVertical: 16 }} />
             ) : dateChips.length === 0 ? (
-              <Text style={s.empty}>No available dates</Text>
+              <Text style={s.empty}>No available dates — this physiotherapist has not published a schedule yet</Text>
+            ) : visibleChips.length === 0 ? (
+              <Text style={s.empty}>No open slots in this month — try the next month</Text>
             ) : (
-              <View style={s.dateRow}>
-                {dateChips.slice(0, 4).map(chip => {
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={s.dateRow}
+              >
+                {visibleChips.map(chip => {
                   const active = chip.isoDate === activeDate;
                   return (
                     <TouchableOpacity
@@ -432,7 +490,7 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
                     </TouchableOpacity>
                   );
                 })}
-              </View>
+              </ScrollView>
             )}
           </View>
 
@@ -794,16 +852,19 @@ const s = StyleSheet.create({
   chevron: { width: 9 * SCALE, height: 9 * SCALE },
   dateRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10 * SCALE,
     marginTop: 8 * SCALE,
+    paddingRight: 8 * SCALE,
   },
   dateChip: {
-    width: 58 * SCALE,
-    height: 56 * SCALE,
+    width: 64 * SCALE,
+    height: 60 * SCALE,
     borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 10 * SCALE,
+    paddingVertical: 8 * SCALE,
+    paddingHorizontal: 6 * SCALE,
   },
   dateChipActive: { backgroundColor: ACCENT },
   dateChipIdle: {
