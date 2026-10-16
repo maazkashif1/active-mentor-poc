@@ -8,7 +8,10 @@ const router = express.Router();
 router.post('/', verifyToken, async (req, res) => {
   try {
     if (req.user.role !== 'physiologist') return res.status(403).json({ message: 'Forbidden' });
-    const { sessionId, patientId, exerciseId, raiseAngleThreshold, lowerAngleThreshold, minAdaptedAngle, targetReps, notes } = req.body;
+    const {
+      sessionId, patientId, exerciseId, raiseAngleThreshold, lowerAngleThreshold,
+      minAdaptedAngle, targetReps, notes, side,
+    } = req.body;
     const prescription = await Prescription.create({
       sessionId,
       patientId,
@@ -18,6 +21,7 @@ router.post('/', verifyToken, async (req, res) => {
       lowerAngleThreshold,
       minAdaptedAngle: minAdaptedAngle ?? null,
       targetReps,
+      side: ['left', 'right', 'both'].includes(side) ? side : 'both',
       notes,
     });
     res.status(201).json(prescription);

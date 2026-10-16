@@ -71,7 +71,11 @@ export default function ExerciseScreen({ navigation, route }: Props) {
   const minAdaptedAngle = prescription?.minAdaptedAngle ?? (rest + 10);
 
   // ── UI state ──────────────────────────────────────────────────────────────
-  const [side, setSide] = useState<Side>('both');
+  // Prescribed sessions lock side from physio; free practice can pick L/R/Both
+  const prescribedSide: Side | null = prescription
+    ? (['left', 'right', 'both'].includes(prescription.side) ? prescription.side : 'both')
+    : null;
+  const [side, setSide] = useState<Side>(prescribedSide ?? 'both');
   const [active, setActive] = useState(false);
   const [calibrating, setCalibrating] = useState(false);
   const [calibFailed, setCalibFailed] = useState(false);
@@ -350,19 +354,27 @@ export default function ExerciseScreen({ navigation, route }: Props) {
             : ''
           } · return to {Math.round(prescriptionRest)}°
         </Text>
-        <Text style={s.sideLabel}>Which side?</Text>
-        <View style={s.sideRow}>
-          {SIDES.map(opt => (
-            <TouchableOpacity
-              key={opt.key}
-              style={[s.sideBtn, side === opt.key && s.sideBtnOn]}
-              onPress={() => setSide(opt.key)}
-              activeOpacity={0.85}
-            >
-              <Text style={[s.sideBtnText, side === opt.key && s.sideBtnTextOn]}>{opt.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {prescribedSide ? (
+          <Text style={s.sideLocked}>
+            Side: {prescribedSide === 'both' ? 'Both' : prescribedSide === 'left' ? 'Left' : 'Right'} (set by your physiologist)
+          </Text>
+        ) : (
+          <>
+            <Text style={s.sideLabel}>Which side?</Text>
+            <View style={s.sideRow}>
+              {SIDES.map(opt => (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[s.sideBtn, side === opt.key && s.sideBtnOn]}
+                  onPress={() => setSide(opt.key)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[s.sideBtnText, side === opt.key && s.sideBtnTextOn]}>{opt.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
         <TouchableOpacity style={s.btn} onPress={start} activeOpacity={0.85}>
           <Text style={s.btnText}>Start</Text>
         </TouchableOpacity>
@@ -501,6 +513,13 @@ const s = StyleSheet.create({
     letterSpacing: 0.4,
     textTransform: 'uppercase',
     marginBottom: 12 * SCALE,
+  },
+  sideLocked: {
+    fontFamily: font('Light'),
+    fontSize: 14 * SCALE,
+    color: 'rgba(51,51,51,0.65)',
+    textAlign: 'center',
+    marginBottom: 28 * SCALE,
   },
   sideRow: { flexDirection: 'row', gap: 10 * SCALE, marginBottom: 32 * SCALE },
   sideBtn: {

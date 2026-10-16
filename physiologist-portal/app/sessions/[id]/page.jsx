@@ -48,6 +48,7 @@ export default function SessionPage() {
   const [targetReps, setTargetReps] = useState(10);
   const [notes, setNotes] = useState('');
   const [selectedExercise, setSelectedExercise] = useState('hand_raise');
+  const [targetSide, setTargetSide] = useState('both'); // left | right | both
   const [patientHistory, setPatientHistory] = useState([]);
   const [followUpDate, setFollowUpDate] = useState('');
   const [savingFollowUp, setSavingFollowUp] = useState(false);
@@ -114,6 +115,7 @@ export default function SessionPage() {
         patientId,
         exerciseId: selectedExercise,
         targetReps,
+        side: targetSide,
         notes,
       });
       setPrescriptionId(prescription._id);
@@ -266,6 +268,31 @@ export default function SessionPage() {
                 onChange={(e) => setTargetReps(Number(e.target.value))}
                 className="w-28 rounded-lg bg-white/10 border border-white/10 px-4 py-2 text-white focus:outline-none focus:border-[#DA7235]"
               />
+            </div>
+
+            <div>
+              <label className="text-sm mb-2 block">Side (patient cannot change this)</label>
+              <div className="flex gap-2">
+                {[
+                  { id: 'left', label: 'Left' },
+                  { id: 'right', label: 'Right' },
+                  { id: 'both', label: 'Both' },
+                ].map(opt => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setTargetSide(opt.id)}
+                    className={[
+                      'px-4 py-2 rounded-lg border text-sm transition-colors',
+                      targetSide === opt.id
+                        ? 'border-[#DA7235] bg-[#DA7235]/20 text-white'
+                        : 'border-white/10 bg-white/5 text-white/60 hover:border-white/25',
+                    ].join(' ')}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div>

@@ -10,6 +10,7 @@ const prescriptionSchema = new mongoose.Schema({
   minAdaptedAngle: { type: Number, default: null },    // physio floor for adaptive target
   currentAdaptedAngle: { type: Number, default: null }, // persisted across sessions
   targetReps: { type: Number, default: 10 },
+  side: { type: String, enum: ['left', 'right', 'both'], default: 'both' },
   notes: { type: String, default: '' },
 }, { timestamps: true });
 
