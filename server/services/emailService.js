@@ -1,9 +1,26 @@
-const { Resend } = require('resend');
+/**
+ * Optional email via Resend. Lazy-init so missing RESEND_API_KEY
+ * does not crash the server at boot (OTP currently returns devCode).
+ */
+let resend = null;
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getResend() {
+  if (resend) return resend;
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return null;
+  const { Resend } = require('resend');
+  resend = new Resend(key);
+  return resend;
+}
 
 async function sendOtpEmail(to, code) {
-  const { data, error } = await resend.emails.send({
+  const client = getResend();
+  if (!client) {
+    console.warn('[Resend] RESEND_API_KEY not set — skipping email to', to);
+    return { skipped: true };
+  }
+
+  const { data, error } = await client.emails.send({
     from: 'Active Mentor <onboarding@resend.dev>',
     to,
     subject: 'Your Active Mentor verification code',
@@ -24,6 +41,7 @@ async function sendOtpEmail(to, code) {
     throw new Error(error.message);
   }
   console.log('[Resend] sent:', data?.id);
+  return data;
 }
 
 module.exports = { sendOtpEmail };

@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const { sendOtpEmail } = require('../services/emailService');
+// OTP emails optional — currently return devCode; wire sendOtpEmail when Resend domain is ready
+// const { sendOtpEmail } = require('../services/emailService');
 
 const router = express.Router();
 
