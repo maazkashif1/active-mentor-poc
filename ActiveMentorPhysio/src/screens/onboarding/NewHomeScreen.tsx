@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -376,6 +376,9 @@ export default function NewHomeScreen({ navigation }: Props) {
   const [greet, setGreet] = useState(() => greetingForHour(new Date().getHours()));
   const [bodyJoint, setBodyJoint] = useState<(typeof BODY_JOINTS)[0] | null>(null);
   const [storyFocus, setStoryFocus] = useState<string | null>(null);
+  const storyScrollRef = useRef<ScrollView>(null);
+  const storyChipX = useRef<number[]>([]);
+  const lastStoryIndex = useRef(0);
   const physios = useAppStore(s => s.physios);
   const sessions = useAppStore(s => s.sessions);
   const prescriptions = useAppStore(s => s.prescriptions);
@@ -453,6 +456,37 @@ export default function NewHomeScreen({ navigation }: Props) {
     STORY_CHAPTERS.find(c => !chapterDone[c.id])?.id ||
     'progress';
   const activeChapter = STORY_CHAPTERS.find(c => c.id === activeChapterId) || STORY_CHAPTERS[0];
+  const activeChapterIndex = STORY_CHAPTERS.findIndex(c => c.id === activeChapter.id);
+
+  /** Scroll so neighbors stay visible — forward reveals next, back reveals previous. */
+  const scrollStoryToIndex = (index: number) => {
+    if (!storyScrollRef.current) return;
+    const x = storyChipX.current[index];
+    if (x == null) return;
+
+    const goingBack = index < lastStoryIndex.current;
+    lastStoryIndex.current = index;
+
+    // Forward: pin active left → next stays on screen
+    // Back: pin previous left → previous stays tappable beside active
+    const anchor = goingBack ? Math.max(0, index - 1) : index;
+    const targetX = Math.max(0, (storyChipX.current[anchor] ?? x) - 4 * SCALE);
+    storyScrollRef.current.scrollTo({ x: targetX, animated: true });
+  };
+
+  const focusStoryChapter = (id: string) => {
+    setStoryFocus(id);
+    const idx = STORY_CHAPTERS.findIndex(c => c.id === id);
+    if (idx >= 0) {
+      requestAnimationFrame(() => scrollStoryToIndex(idx));
+    }
+  };
+
+  useEffect(() => {
+    if (activeChapterIndex < 0) return;
+    const t = setTimeout(() => scrollStoryToIndex(activeChapterIndex), 50);
+    return () => clearTimeout(t);
+  }, [activeChapterIndex]);
 
   const runChapter = (id: string) => {
     if (id === 'intake') navigation.navigate('CareArea' as any, { returnTo: 'NewHome' });
@@ -862,6 +896,7 @@ export default function NewHomeScreen({ navigation }: Props) {
             />
 
             <ScrollView
+              ref={storyScrollRef}
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={s.storyStrip}
@@ -873,7 +908,10 @@ export default function NewHomeScreen({ navigation }: Props) {
                   <TouchableOpacity
                     key={ch.id}
                     style={[s.storyChip, active && s.storyChipActive, done && !active && s.storyChipDone]}
-                    onPress={() => setStoryFocus(ch.id)}
+                    onPress={() => focusStoryChapter(ch.id)}
+                    onLayout={e => {
+                      storyChipX.current[i] = e.nativeEvent.layout.x;
+                    }}
                     activeOpacity={0.85}
                   >
                     <Text style={[s.storyChipNum, active && s.storyChipNumActive]}>

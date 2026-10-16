@@ -55,6 +55,7 @@ export default function PhoneScreen({ navigation }: Props) {
             title="Let's get you set up"
             subtitle="We'll send a 6-digit code to your email to verify it's you."
             onBack={() => navigation.goBack()}
+            progress={{ current: 1, total: 3 }}
           />
           <View style={s.form}>
             <Text style={s.inputLabel}>Email Address</Text>

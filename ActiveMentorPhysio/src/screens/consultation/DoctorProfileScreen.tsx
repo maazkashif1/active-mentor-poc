@@ -45,12 +45,7 @@ const IMG = {
   hero: require('../../assets/images/figma/profile/doctor_hero.png'),
   map: require('../../assets/images/figma/profile/map_bg.png'),
   back: require('../../assets/images/figma/profile/icon_back.png'),
-  heart: require('../../assets/images/figma/profile/icon_heart.png'),
-  star: require('../../assets/images/figma/profile/icon_star.png'),
-  info: require('../../assets/images/figma/profile/icon_info.png'),
-  call: require('../../assets/images/figma/profile/icon_call.png'),
   message: require('../../assets/images/figma/profile/icon_message.png'),
-  video: require('../../assets/images/figma/profile/icon_video.png'),
   pin: require('../../assets/images/figma/profile/icon_pin.png'),
   pinMap: require('../../assets/images/figma/profile/icon_pin_map.png'),
   chevron: require('../../assets/images/figma/profile/icon_chevron.png'),
@@ -131,7 +126,6 @@ function displayName(physio: any) {
 export default function DoctorProfileScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const physio = route.params?.physio;
-  const [fav, setFav] = useState(false);
   const clinics = useMemo(() => clinicsFromPhysio(physio), [physio]);
   const [hospitalId, setHospitalId] = useState('');
   const [slots, setSlots] = useState<any[]>([]);
@@ -248,13 +242,6 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
             <TouchableOpacity style={s.circleBtn} onPress={() => navigation.goBack()} activeOpacity={0.85}>
               <Image source={IMG.back} style={s.backIcon} resizeMode="contain" />
             </TouchableOpacity>
-            <TouchableOpacity style={s.circleBtn} onPress={() => setFav(v => !v)} activeOpacity={0.85}>
-              <Image
-                source={IMG.heart}
-                style={[s.heartIcon, fav && { tintColor: '#e74c3c' }]}
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
           </View>
 
           <View style={s.heroInfo}>
@@ -269,7 +256,7 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
             </View>
           )}
 
-          {/* Glass action bar */}
+          {/* Message only — call/video not supported */}
           <View style={s.actionBar}>
             <BlurView
               style={StyleSheet.absoluteFill}
@@ -278,33 +265,20 @@ export default function DoctorProfileScreen({ navigation, route }: Props) {
               reducedTransparencyFallbackColor="rgba(51,51,51,0.1)"
             />
             <View style={s.actionBarTint} />
-            <View style={s.actionBarInner}>
-              <TouchableOpacity style={s.detailsBtn} activeOpacity={0.85}>
-                <Image source={IMG.info} style={s.actionIcon} resizeMode="contain" />
-                <Text style={s.detailsText}>Details</Text>
-              </TouchableOpacity>
-              <View style={s.actionIcons}>
-                <TouchableOpacity style={s.iconCircle} activeOpacity={0.85}>
-                  <Image source={IMG.call} style={s.actionIcon} resizeMode="contain" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={s.iconCircle}
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    if (!physio?._id) return;
-                    navigation.navigate('Chat' as any, {
-                      physiologistId: String(physio._id),
-                      physioName: displayName(physio),
-                    });
-                  }}
-                >
-                  <Image source={IMG.message} style={s.actionIcon} resizeMode="contain" />
-                </TouchableOpacity>
-                <TouchableOpacity style={s.iconCircle} activeOpacity={0.85}>
-                  <Image source={IMG.video} style={s.actionIcon} resizeMode="contain" />
-                </TouchableOpacity>
-              </View>
-            </View>
+            <TouchableOpacity
+              style={s.messageBtn}
+              activeOpacity={0.85}
+              onPress={() => {
+                if (!physio?._id) return;
+                navigation.navigate('Chat' as any, {
+                  physiologistId: String(physio._id),
+                  physioName: displayName(physio),
+                });
+              }}
+            >
+              <Image source={IMG.message} style={s.actionIcon} resizeMode="contain" />
+              <Text style={s.messageBtnText}>Message</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -553,7 +527,7 @@ const s = StyleSheet.create({
     left: H_PAD,
     right: H_PAD,
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     zIndex: 2,
   },
   circleBtn: {
@@ -565,27 +539,6 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   backIcon: { width: 16 * SCALE, height: 16 * SCALE },
-  heartIcon: { width: 13 * SCALE, height: 13 * SCALE },
-
-  ratingPill: {
-    position: 'absolute',
-    left: H_PAD,
-    top: 194 * SCALE,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5 * SCALE,
-    paddingHorizontal: 11 * SCALE,
-    paddingVertical: 5 * SCALE,
-    borderRadius: 13,
-    backgroundColor: 'rgba(255,255,255,0.55)',
-  },
-  ratingStar: { width: 12 * SCALE, height: 12 * SCALE },
-  ratingText: {
-    fontFamily: font('Light'),
-    fontSize: 14 * SCALE,
-    lineHeight: 20 * SCALE,
-    color: INK,
-  },
 
   heroInfo: {
     position: 'absolute',
@@ -646,35 +599,21 @@ const s = StyleSheet.create({
     bottom: 0,
     backgroundColor: 'rgba(51,51,51,0.1)',
   },
-  actionBarInner: {
+  messageBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  detailsBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5 * SCALE,
+    justifyContent: 'center',
+    gap: 8 * SCALE,
     backgroundColor: ACCENT,
     borderRadius: 20,
-    paddingHorizontal: 10 * SCALE,
-    paddingVertical: 10 * SCALE,
-    width: 115 * SCALE,
-    justifyContent: 'center',
+    paddingVertical: 12 * SCALE,
+    paddingHorizontal: 16 * SCALE,
   },
-  detailsText: {
-    fontFamily: font('Light'),
-    fontSize: 16 * SCALE,
+  messageBtnText: {
+    fontFamily: font('Medium'),
+    fontSize: 15 * SCALE,
+    fontWeight: '500',
     color: INK,
-  },
-  actionIcons: { flexDirection: 'row', gap: 5 * SCALE },
-  iconCircle: {
-    width: 38 * SCALE,
-    height: 38 * SCALE,
-    borderRadius: 19 * SCALE,
-    backgroundColor: ACCENT,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   actionIcon: { width: 16 * SCALE, height: 16 * SCALE },
 

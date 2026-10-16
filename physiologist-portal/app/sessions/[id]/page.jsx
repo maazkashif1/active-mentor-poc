@@ -12,12 +12,7 @@ const SOAP_LABELS = [
 ];
 
 const EXERCISES = [
-  { id: 'hand_raise', label: 'Hand Raise', sub: 'Shoulder & elbow rehab', available: true },
-  { id: 'shoulder_abduction', label: 'Shoulder Abduction', sub: 'Rotator cuff strengthening', available: false },
-  { id: 'knee_extension', label: 'Knee Extension', sub: 'Quad & patella rehab', available: false },
-  { id: 'ankle_dorsiflexion', label: 'Ankle Dorsiflexion', sub: 'Ankle & calf rehab', available: false },
-  { id: 'wrist_rotation', label: 'Wrist Rotation', sub: 'Wrist & forearm rehab', available: false },
-  { id: 'hip_flexion', label: 'Hip Flexion', sub: 'Hip & back rehab', available: false },
+  { id: 'hand_raise', label: 'Hand Raise', sub: 'Shoulder & elbow rehab' },
 ];
 
 function parseSoap(raw) {
@@ -235,28 +230,21 @@ export default function SessionPage() {
           {/* Exercise selector */}
           <div>
             <label className="text-sm mb-3 block">Select exercise</label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {EXERCISES.map((ex) => (
                 <button
                   key={ex.id}
-                  disabled={!ex.available}
-                  onClick={() => ex.available && setSelectedExercise(ex.id)}
+                  type="button"
+                  onClick={() => setSelectedExercise(ex.id)}
                   className={[
-                    'relative rounded-lg border p-3 text-left transition-colors',
-                    ex.available
-                      ? selectedExercise === ex.id
-                        ? 'border-[#DA7235] bg-[#DA7235]/20'
-                        : 'border-white/10 bg-white/5 hover:border-white/20 cursor-pointer'
-                      : 'border-white/5 bg-white/3 opacity-50 cursor-not-allowed',
+                    'relative rounded-lg border p-3 text-left transition-colors cursor-pointer',
+                    selectedExercise === ex.id
+                      ? 'border-[#DA7235] bg-[#DA7235]/20'
+                      : 'border-white/10 bg-white/5 hover:border-white/20',
                   ].join(' ')}
                 >
                   <p className="text-xs font-medium leading-tight">{ex.label}</p>
                   <p className="text-[10px] text-white/40 mt-0.5 leading-tight">{ex.sub}</p>
-                  {!ex.available && (
-                    <span className="absolute top-1.5 right-1.5 text-[9px] font-semibold bg-white/10 text-white/50 px-1.5 py-0.5 rounded-full">
-                      Soon
-                    </span>
-                  )}
                 </button>
               ))}
             </div>

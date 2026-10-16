@@ -70,6 +70,7 @@ export default function OTPScreen({ navigation, route }: Props) {
           title="Enter verification code"
           subtitle={`We sent a 6-digit code to ${email}`}
           onBack={() => navigation.goBack()}
+          progress={{ current: 2, total: 3 }}
         />
         <View style={s.body}>
           <TouchableOpacity style={s.otpRow} onPress={() => inputRef.current?.focus()} activeOpacity={1}>

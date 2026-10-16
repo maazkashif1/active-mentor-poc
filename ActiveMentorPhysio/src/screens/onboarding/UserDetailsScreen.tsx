@@ -100,9 +100,9 @@ export default function UserDetailsScreen({ navigation, route }: Props) {
           <OnboardingHeader
             label="Your details"
             title="Tell us about yourself"
-            subtitle="Set a password so you can sign back in later — then a few care basics."
+            subtitle="A few basics, then set a password so you can sign back in later."
             onBack={() => navigation.goBack()}
-            progress={{ current: 1, total: 5 }}
+            progress={{ current: 3, total: 3 }}
           />
 
           <View style={s.form}>
