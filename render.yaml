@@ -44,6 +44,11 @@ services:
         sync: false
       - key: RECALL_WEBHOOK_BASE_URL
         sync: false
+      # Sadaan Attempt
+      - key: RECALL_REGION
+        value: ap-northeast-1
+      - key: APP_TIMEZONE
+        value: Asia/Karachi
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET

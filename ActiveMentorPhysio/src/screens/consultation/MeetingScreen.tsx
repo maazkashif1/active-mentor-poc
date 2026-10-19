@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
+import api from '../../config/api';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -35,8 +36,8 @@ const font = (weight: 'Light' | 'Regular' | 'Medium' | 'SemiBold' | 'Bold') =>
 
 export default function MeetingScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
-  const { meetingUrl, physioName, slotDate, slotTime } =
-    route.params as { meetingUrl: string; physioName?: string; slotDate?: string; slotTime?: string };
+  const { sessionId, meetingUrl, physioName, slotDate, slotTime } =
+    route.params as { sessionId?: string; meetingUrl: string; physioName?: string; slotDate?: string; slotTime?: string };
 
   async function openMeet() {
     const canOpen = await Linking.canOpenURL(meetingUrl).catch(() => false);
@@ -44,6 +45,8 @@ export default function MeetingScreen({ navigation, route }: Props) {
       Alert.alert('Cannot open link', 'Could not open Google Meet. Check your internet connection.');
       return;
     }
+    // Make sure the scribe bot is in the call (no-op if it is already there). Never blocks joining.
+    if (sessionId) api.post(`/sessions/${sessionId}/start`).catch(() => {});
     await Linking.openURL(meetingUrl);
   }
 

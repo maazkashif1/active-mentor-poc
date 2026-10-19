@@ -14,6 +14,16 @@ const sessionSchema = new mongoose.Schema({
   meetingUrl: { type: String, default: '' },
   eventId: { type: String, default: '' },
   recallBotId: { type: String, default: '' },
+  // Sadaan Attempt
+  // Correct UTC start instant + scribe bot state, so failures are visible instead of silent.
+  scheduledStart: { type: Date, default: null },
+  recallStatus: { type: String, default: '' }, // e.g. scheduled, bot.in_waiting_room, bot.done, failed
+  recallError: { type: String, default: '' },
+  // Bot orchestration: attempt cap, short-lived lock, and stuck-processing detection.
+  recallAttempts: { type: Number, default: 0 },
+  recallLockUntil: { type: Date, default: null },
+  processingStartedAt: { type: Date, default: null },
+  startedAt: { type: Date, default: null }, // set when physio/patient presses "Start session"
   transcriptText: { type: String, default: '' },
   aiSummary: { type: String, default: '' },
   approvedSummary: { type: String, default: '' },

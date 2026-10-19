@@ -23,7 +23,10 @@ async function exchangeCode(code) {
   return tokens;
 }
 
-async function createMeeting({ tokens, summary, startISO, endISO, attendeeEmails }) {
+// [OLD] async function createMeeting({ tokens, summary, startISO, endISO, attendeeEmails }) {
+// Sadaan Attempt
+// Accepts `timeZone` so the invite is shown in the physio's local time.
+async function createMeeting({ tokens, summary, startISO, endISO, attendeeEmails, timeZone }) {
   const client = makeOAuth2Client();
   client.setCredentials(tokens);
   client.on('tokens', newTokens => { client._newTokens = newTokens; });
@@ -35,8 +38,12 @@ async function createMeeting({ tokens, summary, startISO, endISO, attendeeEmails
     sendUpdates: 'all',
     resource: {
       summary,
-      start: { dateTime: startISO },
-      end: { dateTime: endISO },
+      // [OLD]
+      // start: { dateTime: startISO },
+      // end: { dateTime: endISO },
+      // Sadaan Attempt
+      start: { dateTime: startISO, ...(timeZone && { timeZone }) },
+      end: { dateTime: endISO, ...(timeZone && { timeZone }) },
       attendees: attendeeEmails.map(email => ({ email })),
       conferenceData: {
         createRequest: { requestId: `meet-${Date.now()}`, conferenceSolutionKey: { type: 'hangoutsMeet' } },
