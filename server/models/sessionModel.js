@@ -24,6 +24,7 @@ const sessionSchema = new mongoose.Schema({
   recallLockUntil: { type: Date, default: null },
   processingStartedAt: { type: Date, default: null },
   startedAt: { type: Date, default: null }, // set when physio/patient presses "Start session"
+  endedAt: { type: Date, default: null },   // set when the physio presses "End session"; no new bot is sent after this
   transcriptText: { type: String, default: '' },
   aiSummary: { type: String, default: '' },
   approvedSummary: { type: String, default: '' },
