@@ -35,6 +35,23 @@ const STATUS_COLOR = {
   pending: '#888', active: '#EC9F05', summarised: '#5ba4cf', approved: '#22c55e',
 };
 
+// Sadaan Attempt — human-readable Recall bot states (server: session.recallStatus)
+const SCRIBE_STATUS_LABEL = {
+  creating: 'Setting up…',
+  scheduled: 'Scheduled to join at session start',
+  joining: 'Joining now',
+  create_failed: 'Setup failed — will retry at session start',
+  'bot.joining_call': 'Joining the call',
+  'bot.in_waiting_room': 'Waiting to be admitted',
+  'bot.in_call_not_recording': 'In call (not recording yet)',
+  'bot.in_call_recording': 'Recording',
+  'bot.call_ended': 'Call ended',
+  processing: 'Generating transcript & summary…',
+  transcribed: 'Transcribed',
+  done_no_transcript: 'Finished without a transcript',
+  failed: 'Failed',
+};
+
 export default function SessionPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -152,6 +169,22 @@ export default function SessionPage() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
             Join Google Meet
           </a>
+        )}
+
+        {/* Sadaan Attempt — the Recall bot joins Meet as a guest and must be admitted by the physio */}
+        {session?.meetingUrl && !session?.transcriptText && (
+          <section className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-1 text-sm">
+            <p className="text-white/70">
+              An <span className="font-medium text-white">&quot;Active Mentor Scribe&quot;</span> bot will ask to join the call.
+              Please click <span className="font-medium text-white">Admit</span> so the consultation is recorded and transcribed.
+            </p>
+            {session.recallStatus && (
+              <p className="text-white/40 text-xs">Scribe status: {SCRIBE_STATUS_LABEL[session.recallStatus] || session.recallStatus}</p>
+            )}
+            {session.recallError && (
+              <p className="text-red-400 text-xs">{session.recallError}</p>
+            )}
+          </section>
         )}
 
         {/* Patient info */}
