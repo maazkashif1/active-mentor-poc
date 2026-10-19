@@ -5,6 +5,8 @@ const verifyToken = require('../middleware/auth');
 const calendarService = require('../services/calendarService');
 const { ensureBot } = require('../services/botOrchestrator');
 const { processTranscript } = require('../services/transcriptService');
+const recallService = require('../services/recallService');
+const { watchBot } = require('../services/botWatcher');
 // Sadaan Attempt
 const { APP_TIMEZONE, slotToDate } = require('../services/timeService');
 
@@ -206,6 +208,11 @@ router.post('/:id/start', verifyToken, async (req, res) => {
 
     if (session.status === 'pending') session.status = 'active';
     if (!session.startedAt) session.startedAt = new Date();
+    // Starting again after "End session" (physio only) re-opens the session for a new bot.
+    if (session.endedAt) {
+      if (!isPhysio) return res.json({ started: false, reason: 'session_ended', meetingUrl: session.meetingUrl, recallStatus: session.recallStatus });
+      session.endedAt = null;
+    }
     await session.save();
 
     // An explicit start gives a fresh attempt budget if earlier bots gave up.
@@ -219,6 +226,43 @@ router.post('/:id/start', verifyToken, async (req, res) => {
 
     const fresh = await Session.findById(session._id);
     res.json({ started: true, bot: state, meetingUrl: fresh.meetingUrl, recallStatus: fresh.recallStatus, recallError: fresh.recallError });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Physio ends the consultation: the scribe bot leaves the Meet right away and the
+// transcript + summary are produced as soon as Recall finishes the recording.
+router.post('/:id/end', verifyToken, async (req, res) => {
+  try {
+    const session = await Session.findById(req.params.id);
+    if (!session) return res.status(404).json({ message: 'Session not found' });
+    if (String(req.user.id) !== String(session.physiologistId)) {
+      return res.status(403).json({ message: 'Only the physiotherapist can end the session' });
+    }
+    if (!session.recallBotId) {
+      return res.status(400).json({ message: 'No scribe bot was sent for this session' });
+    }
+
+    // Idempotent: a repeated click just re-nudges the bot.
+    if (!session.endedAt) {
+      await Session.updateOne({ _id: session._id }, { endedAt: new Date() });
+    }
+    console.log(`[end-session] session=${session._id} bot=${session.recallBotId} status=${session.recallStatus}`);
+
+    if (!session.transcriptText) {
+      if (session.recallStatus === 'scheduled') {
+        // Not in the call yet: just cancel it.
+        await recallService.deleteBot(session.recallBotId);
+        await Session.updateOne({ _id: session._id }, { recallStatus: 'done_no_transcript', recallError: 'The session was ended before the scribe joined.' });
+      } else {
+        await recallService.leaveCall(session.recallBotId);
+        watchBot(session._id, session.recallBotId);
+      }
+    }
+
+    const fresh = await Session.findById(session._id);
+    res.json({ ended: true, endedAt: fresh.endedAt, recallStatus: fresh.recallStatus, recallError: fresh.recallError });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

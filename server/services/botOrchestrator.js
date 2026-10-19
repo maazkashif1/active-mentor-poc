@@ -17,7 +17,7 @@ const errText = e => (e.response?.data ? JSON.stringify(e.response.data) : e.mes
 //   now: false → booking / scheduler path; the bot is scheduled for the slot time.
 // Returns { state } where state is one of:
 //   'no_meeting_link' | 'busy' | 'live' | 'scheduled' | 'created' | 'recorded'
-//   | 'exhausted' | 'create_failed' | 'skipped'
+//   | 'exhausted' | 'create_failed' | 'skipped' | 'ended'
 // 'recorded' = the bot recorded and has finished; the caller should process the transcript.
 async function ensureBot(sessionId, { now = false, resetAttempts = false } = {}) {
   // Short-lived atomic lock so concurrent triggers (start button, scheduler,
@@ -72,6 +72,9 @@ async function run(session, now) {
     }
     // else: bot left without recording (timeout / kicked / fatal) → fall through and retry
   }
+
+  // The physio ended the session: never send another bot.
+  if (session.endedAt) return { state: 'ended' };
 
   if (session.recallAttempts >= MAX_ATTEMPTS) {
     await Session.updateOne(

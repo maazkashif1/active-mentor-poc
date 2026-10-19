@@ -2,6 +2,7 @@ const Session = require('../models/sessionModel');
 const { ensureBot } = require('./botOrchestrator');
 const { processTranscript } = require('./transcriptService');
 const { slotToDate } = require('./timeService');
+const { finalizeEndedBot } = require('./botWatcher');
 
 const TICK_MS = 60 * 1000;
 const LEAD_MS = 2 * 60 * 1000;            // send the bot this long before the slot starts
@@ -37,6 +38,18 @@ async function tick() {
     for (const s of due) {
       const { state } = await ensureBot(s._id);
       if (state === 'recorded') await processTranscript(s._id, s.recallBotId);
+    }
+
+    // 1b) Sessions the physio ended: make sure the transcript gets processed (backup for the
+    //     in-process watcher, e.g. after a server restart).
+    const ended = await Session.find({
+      endedAt: { $gte: new Date(now - 6 * 60 * 60 * 1000) },
+      recallBotId: { $nin: ['', null] },
+      transcriptText: { $in: ['', null] },
+      recallStatus: { $nin: FINAL },
+    }).select('_id recallBotId');
+    for (const s of ended) {
+      await finalizeEndedBot(s._id, s.recallBotId).catch(e => console.warn(`[scheduler] ended session ${s._id}: ${e.message}`));
     }
 
     // 2) Bots that recorded but whose webhook never arrived (session already past the retry window).

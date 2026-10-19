@@ -123,6 +123,17 @@ async function deleteBot(botId) {
   }
 }
 
+// Asks an in-call bot to leave now. Returns false (without throwing) if it cannot.
+async function leaveCall(botId) {
+  try {
+    await axios.post(`${RECALL_BASE}/bot/${botId}/leave_call/`, {}, { headers: headers() });
+    return true;
+  } catch (e) {
+    console.warn('Recall leave_call failed:', e.response?.status, e.response?.data ? JSON.stringify(e.response.data) : e.message);
+    return false;
+  }
+}
+
 // Latest lifecycle code of a bot, e.g. in_waiting_room, in_call_recording, done. null = not joined yet.
 function latestCode(bot) {
   const changes = bot?.status_changes || [];
@@ -134,4 +145,4 @@ function hasRecorded(bot) {
   return (bot?.status_changes || []).some(c => c.code === 'in_call_recording');
 }
 
-module.exports = { createBot, getTranscript, getBot, deleteBot, latestCode, hasRecorded };
+module.exports = { createBot, getTranscript, getBot, deleteBot, leaveCall, latestCode, hasRecorded };

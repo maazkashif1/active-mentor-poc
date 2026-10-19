@@ -78,13 +78,11 @@ async function findSession({ botId, metaSessionId }, paramSessionId) {
 router.post(['/recall', '/recall/:sessionId'], express.raw({ type: 'application/json' }), async (req, res) => {
   // Verify Svix signature
   try {
-    const wh = new Webhook(process.env.RECALL_WEBHOOK_SECRET);
-    wh.verify(req.body, {
-      'svix-id': req.headers['svix-id'],
-      'svix-timestamp': req.headers['svix-timestamp'],
-      'svix-signature': req.headers['svix-signature'],
-    });
-  } catch {
+    // Recall signs with either `svix-*` or the standard `webhook-*` header names;
+    // the svix library accepts both when given all request headers.
+    new Webhook(process.env.RECALL_WEBHOOK_SECRET).verify(req.body, req.headers);
+  } catch (err) {
+    console.warn(`[recall-webhook] rejected: ${err.message}`);
     return res.status(400).json({ message: 'Invalid signature' });
   }
 
