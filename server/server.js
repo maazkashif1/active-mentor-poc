@@ -1,5 +1,6 @@
 require('dotenv').config(); // must be first
 const http = require('http');
+const https = require('https');
 const mongoose = require('mongoose');
 const app = require('./app');
 const { attachSocket } = require('./socket');
@@ -16,7 +17,8 @@ mongoose
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT} (REST + WebSocket)`);
       const base = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
-      setInterval(() => http.get(`${base}/healthz`).on('error', () => {}), 15000);
+      const client = base.startsWith('https') ? https : http;
+      setInterval(() => client.get(`${base}/healthz`).on('error', () => {}), 15000);
     });
   })
   .catch(err => {
