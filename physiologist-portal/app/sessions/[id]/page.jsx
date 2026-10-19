@@ -48,9 +48,11 @@ const SCRIBE_STATUS_LABEL = {
   'bot.in_waiting_room': 'Waiting to be admitted',
   'bot.in_call_not_recording': 'In call (not recording yet)',
   'bot.in_call_recording': 'Recording',
-  'bot.call_ended': 'Call ended',
+  'bot.call_ended': 'Call ended — generating transcript…',
+  'bot.recording_done': 'Call ended — generating transcript…',
+  'bot.done': 'Call ended — generating transcript…',
   processing: 'Generating transcript & summary…',
-  transcribed: 'Transcribed',
+  transcribed: 'Transcript ready',
   done_no_transcript: 'Finished without a transcript',
   failed: 'Failed',
 };
@@ -74,6 +76,7 @@ export default function SessionPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [starting, setStarting] = useState(false);
+  const [ending, setEnding] = useState(false);
 
   // Sadaan Attempt — "meeting started" trigger: opens Meet immediately (so the popup isn't
   // blocked) and asks the server to send the scribe bot into the call right now.
@@ -96,6 +99,25 @@ export default function SessionPage() {
       .finally(() => setStarting(false));
   }
 
+  // End the consultation: the scribe leaves the meeting and the transcript + summary are generated.
+  async function endSession() {
+    if (!window.confirm('End this session? The scribe will leave the meeting and the transcript will be generated.')) return;
+    setEnding(true); setError(''); setSuccess('');
+    try {
+      const r = await api.post(`/api/sessions/${id}/end`, {});
+      setSession(prev => prev && ({
+        ...prev,
+        endedAt: r.endedAt,
+        recallStatus: r.recallStatus ?? prev.recallStatus,
+        recallError: r.recallError ?? prev.recallError,
+      }));
+    } catch (e) {
+      setError(`Could not end the session: ${e.message}`);
+    } finally {
+      setEnding(false);
+    }
+  }
+
   // Keep the scribe status live while the consultation is running / being processed.
   useEffect(() => {
     if (!session?.meetingUrl || session.transcriptText) return;
@@ -108,14 +130,16 @@ export default function SessionPage() {
           status: s.status,
           recallStatus: s.recallStatus,
           recallError: s.recallError,
+          recallBotId: s.recallBotId,
+          endedAt: s.endedAt,
           transcriptText: s.transcriptText,
           aiSummary: s.aiSummary,
         }));
         if (s.aiSummary) setSoap(cur => (cur.S || cur.O || cur.A || cur.P ? cur : parseSoap(s.approvedSummary || s.aiSummary)));
       }).catch(() => {});
-    }, 10000);
+    }, session?.endedAt ? 5000 : 10000);
     return () => clearInterval(t);
-  }, [id, session?.meetingUrl, session?.status, session?.recallStatus, session?.transcriptText]);
+  }, [id, session?.meetingUrl, session?.status, session?.recallStatus, session?.transcriptText, session?.endedAt]);
 
   useEffect(() => {
     if (!getToken()) { router.push('/login'); return; }
@@ -204,26 +228,51 @@ export default function SessionPage() {
           </p>
         </div>
 
-        {/* Start session — opens Meet and sends the scribe bot in */}
+        {/* Start / End session — controls the scribe bot */}
         {session?.meetingUrl && (
-          <button
-            type="button"
-            onClick={startSession}
-            disabled={starting}
-            className="flex items-center justify-center gap-2 w-full rounded-xl border border-[#22c55e]/30 bg-[#22c55e]/10 px-5 py-4 text-[#22c55e] font-semibold hover:bg-[#22c55e]/20 transition-colors disabled:opacity-60"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
-            {starting ? 'Starting…' : session.status === 'active' ? 'Join Google Meet' : 'Start session'}
-          </button>
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+            <button
+              type="button"
+              onClick={startSession}
+              disabled={starting || ending}
+              className="flex items-center justify-center gap-2 w-full rounded-xl border border-[#22c55e]/30 bg-[#22c55e]/10 px-5 py-4 text-[#22c55e] font-semibold hover:bg-[#22c55e]/20 transition-colors disabled:opacity-60"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+              {starting
+                ? 'Starting…'
+                : session.endedAt && !session.transcriptText
+                  ? 'Rejoin & restart scribe'
+                  : session.status === 'active' ? 'Join Google Meet' : 'Start session'}
+            </button>
+            {session.recallBotId && !session.endedAt && !session.transcriptText && session.status === 'active' && (
+              <button
+                type="button"
+                onClick={endSession}
+                disabled={ending || starting}
+                className="flex items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-red-400 font-semibold hover:bg-red-500/20 transition-colors disabled:opacity-60"
+              >
+                {ending ? 'Ending…' : 'End session'}
+              </button>
+            )}
+          </div>
         )}
 
         {/* Sadaan Attempt — the Recall bot joins Meet as a guest and must be admitted by the physio */}
         {session?.meetingUrl && !session?.transcriptText && (
           <section className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-1 text-sm">
-            <p className="text-white/70">
-              Pressing <span className="font-medium text-white">Start session</span> sends the <span className="font-medium text-white">&quot;Active Mentor Scribe&quot;</span> bot into the call.
-              Please click <span className="font-medium text-white">Admit</span> so the consultation is recorded and transcribed.
-            </p>
+            {session.endedAt ? (
+              <p className="text-white/70">
+                Session ended — the scribe has left the meeting.
+                {['done_no_transcript', 'failed'].includes(session.recallStatus)
+                  ? ''
+                  : ' Generating the transcript and summary; this page updates automatically.'}
+              </p>
+            ) : (
+              <p className="text-white/70">
+                Pressing <span className="font-medium text-white">Start session</span> sends the <span className="font-medium text-white">&quot;Active Mentor Scribe&quot;</span> bot into the call.
+                Please click <span className="font-medium text-white">Admit</span> so the consultation is recorded. When the consultation is over, press <span className="font-medium text-white">End session</span> so the scribe leaves and the transcript is generated.
+              </p>
+            )}
             {session.recallStatus && (
               <p className="text-white/40 text-xs">Scribe status: {SCRIBE_STATUS_LABEL[session.recallStatus] || session.recallStatus}</p>
             )}
