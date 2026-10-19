@@ -13,7 +13,11 @@ mongoose
     const server = http.createServer(app);
     const io = attachSocket(server);
     app.set('io', io);
-    server.listen(PORT, () => console.log(`Server running on port ${PORT} (REST + WebSocket)`));
+    server.listen(PORT, () => {
+      console.log(`Server running on port ${PORT} (REST + WebSocket)`);
+      const base = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+      setInterval(() => http.get(`${base}/healthz`).on('error', () => {}), 15000);
+    });
   })
   .catch(err => {
     console.error('MongoDB connection error:', err);

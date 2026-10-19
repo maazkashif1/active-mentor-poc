@@ -18,6 +18,8 @@ const app = express();
 
 app.use(cors());
 
+app.get('/healthz', (req, res) => res.sendStatus(200));
+
 // Webhook routes need raw body for Svix signature verification — bypass express.json()
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/webhook')) return next();
