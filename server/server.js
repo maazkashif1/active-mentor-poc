@@ -4,6 +4,7 @@ const https = require('https');
 const mongoose = require('mongoose');
 const app = require('./app');
 const { attachSocket } = require('./socket');
+const { startRecallScheduler } = require('./services/recallScheduler');
 
 const PORT = process.env.PORT || 3000;
 
@@ -14,6 +15,7 @@ mongoose
     const server = http.createServer(app);
     const io = attachSocket(server);
     app.set('io', io);
+    startRecallScheduler();
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT} (REST + WebSocket)`);
       const base = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;

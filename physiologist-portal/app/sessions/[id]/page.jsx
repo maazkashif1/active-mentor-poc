@@ -40,7 +40,10 @@ const SCRIBE_STATUS_LABEL = {
   creating: 'Setting up…',
   scheduled: 'Scheduled to join at session start',
   joining: 'Joining now',
-  create_failed: 'Setup failed — will retry at session start',
+  create_failed: 'Setup failed — will retry automatically',
+  needs_retry: 'Bot left the call — sending a new one…',
+  no_meeting_link: 'No Meet link, so no scribe bot',
+  retry_processing: 'Generating transcript & summary…',
   'bot.joining_call': 'Joining the call',
   'bot.in_waiting_room': 'Waiting to be admitted',
   'bot.in_call_not_recording': 'In call (not recording yet)',
@@ -70,6 +73,45 @@ export default function SessionPage() {
   const [prescriptionId, setPrescriptionId] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [starting, setStarting] = useState(false);
+
+  // Sadaan Attempt — "meeting started" trigger: opens Meet immediately (so the popup isn't
+  // blocked) and asks the server to send the scribe bot into the call right now.
+  function startSession() {
+    if (!session?.meetingUrl) return;
+    window.open(session.meetingUrl, '_blank', 'noopener,noreferrer');
+    setStarting(true);
+    api.post(`/api/sessions/${id}/start`, {})
+      .then(r => setSession(prev => prev && ({
+        ...prev,
+        status: prev.status === 'pending' ? 'active' : prev.status,
+        recallStatus: r.recallStatus ?? prev.recallStatus,
+        recallError: r.recallError ?? prev.recallError,
+      })))
+      .catch(e => setError(e.message))
+      .finally(() => setStarting(false));
+  }
+
+  // Keep the scribe status live while the consultation is running / being processed.
+  useEffect(() => {
+    if (!session?.meetingUrl || session.transcriptText) return;
+    if (!['pending', 'active'].includes(session.status) && session.recallStatus !== 'processing') return;
+    const t = setInterval(() => {
+      api.get(`/api/sessions/${id}`).then(d => {
+        const s = d.session ?? d;
+        setSession(prev => prev && ({
+          ...prev,
+          status: s.status,
+          recallStatus: s.recallStatus,
+          recallError: s.recallError,
+          transcriptText: s.transcriptText,
+          aiSummary: s.aiSummary,
+        }));
+        if (s.aiSummary) setSoap(cur => (cur.S || cur.O || cur.A || cur.P ? cur : parseSoap(s.approvedSummary || s.aiSummary)));
+      }).catch(() => {});
+    }, 10000);
+    return () => clearInterval(t);
+  }, [id, session?.meetingUrl, session?.status, session?.recallStatus, session?.transcriptText]);
 
   useEffect(() => {
     if (!getToken()) { router.push('/login'); return; }
@@ -158,24 +200,24 @@ export default function SessionPage() {
           </p>
         </div>
 
-        {/* Join Meeting */}
+        {/* Start session — opens Meet and sends the scribe bot in */}
         {session?.meetingUrl && (
-          <a
-            href={session.meetingUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 w-full rounded-xl border border-[#22c55e]/30 bg-[#22c55e]/10 px-5 py-4 text-[#22c55e] font-semibold hover:bg-[#22c55e]/20 transition-colors"
+          <button
+            type="button"
+            onClick={startSession}
+            disabled={starting}
+            className="flex items-center justify-center gap-2 w-full rounded-xl border border-[#22c55e]/30 bg-[#22c55e]/10 px-5 py-4 text-[#22c55e] font-semibold hover:bg-[#22c55e]/20 transition-colors disabled:opacity-60"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
-            Join Google Meet
-          </a>
+            {starting ? 'Starting…' : session.status === 'active' ? 'Join Google Meet' : 'Start session'}
+          </button>
         )}
 
         {/* Sadaan Attempt — the Recall bot joins Meet as a guest and must be admitted by the physio */}
         {session?.meetingUrl && !session?.transcriptText && (
           <section className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-1 text-sm">
             <p className="text-white/70">
-              An <span className="font-medium text-white">&quot;Active Mentor Scribe&quot;</span> bot will ask to join the call.
+              Pressing <span className="font-medium text-white">Start session</span> sends the <span className="font-medium text-white">&quot;Active Mentor Scribe&quot;</span> bot into the call.
               Please click <span className="font-medium text-white">Admit</span> so the consultation is recorded and transcribed.
             </p>
             {session.recallStatus && (

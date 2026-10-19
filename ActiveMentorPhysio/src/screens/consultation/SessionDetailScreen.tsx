@@ -151,6 +151,7 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
             style={s.joinBtn}
             onPress={() =>
               navigation.navigate('Meeting', {
+                sessionId: session._id,
                 meetingUrl: session.meetingUrl,
                 physioName: session.physiologistId?.name,
                 slotDate: session.slotDate,
