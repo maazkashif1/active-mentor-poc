@@ -1,6 +1,7 @@
 const Session = require('../models/sessionModel');
 const { ensureBot } = require('./botOrchestrator');
 const { processTranscript } = require('./transcriptService');
+const { slotToDate } = require('./timeService');
 
 const TICK_MS = 60 * 1000;
 const LEAD_MS = 2 * 60 * 1000;            // send the bot this long before the slot starts
@@ -16,6 +17,13 @@ async function tick() {
   running = true;
   try {
     const now = Date.now();
+
+    // 0) Backfill scheduledStart for sessions booked before that field existed.
+    const legacy = await Session.find({ scheduledStart: null, status: { $in: ['pending', 'active'] } })
+      .select('_id slotDate slotTime');
+    for (const s of legacy) {
+      await Session.updateOne({ _id: s._id }, { scheduledStart: slotToDate(s.slotDate, s.slotTime) });
+    }
 
     // 1) Sessions starting soon / in progress that need a live bot, a retry, or a transcript.
     const due = await Session.find({

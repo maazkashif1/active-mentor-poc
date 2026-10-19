@@ -176,8 +176,11 @@ router.get('/my', verifyToken, async (req, res) => {
 // Sadaan Attempt
 // "Meeting started" trigger. Called when the physio (portal) or patient (app) presses
 // Start/Join. Makes sure the scribe bot is in — or on its way into — the Meet now.
-const START_EARLY_MS = 30 * 60 * 1000;
-const START_LATE_MS = 3 * 60 * 60 * 1000;
+// The physio's explicit Start always sends the bot (no early limit — they decide when the
+// meeting starts). The patient's open-the-link trigger is limited to near the slot so a
+// patient poking at the link days early does not send a bot into an empty meeting.
+const PATIENT_START_EARLY_MS = 30 * 60 * 1000;
+const START_LATE_MS = 6 * 60 * 60 * 1000;
 
 router.post('/:id/start', verifyToken, async (req, res) => {
   try {
@@ -192,8 +195,12 @@ router.post('/:id/start', verifyToken, async (req, res) => {
       return res.status(400).json({ message: 'This session has no Meet link', recallStatus: session.recallStatus });
     }
 
-    const offset = Date.now() - scheduledAt(session).getTime();
-    if (offset < -START_EARLY_MS || offset > START_LATE_MS) {
+    // Sessions booked before scheduledStart existed.
+    if (!session.scheduledStart) session.scheduledStart = scheduledAt(session);
+
+    const isPhysio = uid === String(session.physiologistId);
+    const offset = Date.now() - session.scheduledStart.getTime();
+    if ((!isPhysio && offset < -PATIENT_START_EARLY_MS) || offset > START_LATE_MS) {
       return res.json({ started: false, reason: 'outside_session_window', meetingUrl: session.meetingUrl, recallStatus: session.recallStatus });
     }
 

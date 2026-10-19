@@ -82,6 +82,10 @@ export default function SessionPage() {
     window.open(session.meetingUrl, '_blank', 'noopener,noreferrer');
     setStarting(true);
     api.post(`/api/sessions/${id}/start`, {})
+      .then(r => {
+        if (r.started === false) setError('Scribe bot was not started: this session is outside its time window.');
+        return r;
+      })
       .then(r => setSession(prev => prev && ({
         ...prev,
         status: prev.status === 'pending' ? 'active' : prev.status,
