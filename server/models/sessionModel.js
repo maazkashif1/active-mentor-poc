@@ -25,6 +25,14 @@ const sessionSchema = new mongoose.Schema({
   processingStartedAt: { type: Date, default: null },
   startedAt: { type: Date, default: null }, // set when physio/patient presses "Start session"
   endedAt: { type: Date, default: null },   // set when the physio presses "End session"; no new bot is sent after this
+  // One entry per scribe bot that recorded (a session can be resumed until it is approved).
+  // transcriptText is these segments joined in order.
+  recordings: [{
+    _id: false,
+    botId: String,
+    transcript: { type: String, default: '' },
+    createdAt: { type: Date, default: Date.now },
+  }],
   transcriptText: { type: String, default: '' },
   aiSummary: { type: String, default: '' },
   approvedSummary: { type: String, default: '' },

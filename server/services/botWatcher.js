@@ -3,7 +3,7 @@
 // calls finalizeEndedBot() too, so a server restart mid-watch loses nothing.
 const Session = require('../models/sessionModel');
 const recallService = require('./recallService');
-const { processTranscript } = require('./transcriptService');
+const { processTranscript, noNewRecording } = require('./transcriptService');
 
 const POLL_MS = 10 * 1000;
 const MAX_WATCH_MS = 5 * 60 * 1000;
@@ -28,13 +28,7 @@ async function finalizeEndedBot(sessionId, botId) {
   if (code !== 'done' && code !== 'fatal') return false;
 
   if (!recallService.hasRecorded(bot)) {
-    await Session.updateOne(
-      { _id: sessionId, transcriptText: { $in: ['', null] }, recallStatus: { $nin: PIPELINE_STATES } },
-      {
-        recallStatus: 'done_no_transcript',
-        recallError: 'The session was ended before the scribe started recording, so there is no transcript.',
-      },
-    );
+    await noNewRecording(sessionId, botId);
     return true;
   }
   await processTranscript(sessionId, botId);

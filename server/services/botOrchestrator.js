@@ -1,5 +1,6 @@
 const Session = require('../models/sessionModel');
 const recallService = require('./recallService');
+const { processTranscript, isBotProcessed } = require('./transcriptService');
 
 const MAX_ATTEMPTS = 3;
 const LOCK_MS = 60 * 1000;
@@ -17,7 +18,7 @@ const errText = e => (e.response?.data ? JSON.stringify(e.response.data) : e.mes
 //   now: false → booking / scheduler path; the bot is scheduled for the slot time.
 // Returns { state } where state is one of:
 //   'no_meeting_link' | 'busy' | 'live' | 'scheduled' | 'created' | 'recorded'
-//   | 'exhausted' | 'create_failed' | 'skipped' | 'ended'
+//   | 'exhausted' | 'create_failed' | 'skipped' | 'ended' | 'locked'
 // 'recorded' = the bot recorded and has finished; the caller should process the transcript.
 async function ensureBot(sessionId, { now = false, resetAttempts = false } = {}) {
   // Short-lived atomic lock so concurrent triggers (start button, scheduler,
@@ -41,7 +42,12 @@ async function ensureBot(sessionId, { now = false, resetAttempts = false } = {})
 
 async function run(session, now) {
   if (!session.meetingUrl) return { state: 'no_meeting_link' };
-  if (session.transcriptText || ['processing', 'transcribed', 'done_no_transcript'].includes(session.recallStatus)) {
+  // Approved = signed off: the note is final and no scribe joins again.
+  if (session.status === 'approved') return { state: 'locked' };
+  // Automatic paths (booking / scheduler) only ever record a session once. Only an explicit
+  // physio Start (`now`) resumes a session that already has a recording.
+  const hasRecording = !!session.transcriptText || (session.recordings || []).length > 0;
+  if (!now && (hasRecording || ['processing', 'transcribed', 'done_no_transcript'].includes(session.recallStatus))) {
     return { state: 'skipped' };
   }
 
@@ -68,7 +74,23 @@ async function run(session, now) {
       if (!now || !joinAt || joinAt - Date.now() <= SCHEDULED_SLACK_MS) return { state: 'scheduled' };
       await recallService.deleteBot(session.recallBotId);
     } else if (recallService.hasRecorded(bot)) {
-      return { state: 'recorded' }; // finished a real recording → transcript pipeline
+      // Finished a real recording.
+      if (!isBotProcessed(session, session.recallBotId)) {
+        if (!now) return { state: 'recorded' }; // caller runs the transcript pipeline
+        // Resuming before the earlier part was processed: finish it in the background.
+        processTranscript(session._id, session.recallBotId)
+          .catch(e => console.error('Transcript processing failed:', e.message));
+      } else if (!now) {
+        return { state: 'skipped' };
+      }
+      // Resume: keep the earlier recording (seed `recordings` for sessions transcribed
+      // before it existed) and fall through to send a new bot.
+      if (!(session.recordings || []).length && session.transcriptText) {
+        await Session.updateOne(
+          { _id: session._id, 'recordings.0': { $exists: false } },
+          { recordings: [{ botId: session.recallBotId, transcript: session.transcriptText, createdAt: session.updatedAt }] },
+        );
+      }
     }
     // else: bot left without recording (timeout / kicked / fatal) → fall through and retry
   }

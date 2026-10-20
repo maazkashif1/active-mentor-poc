@@ -42,11 +42,15 @@ async function tick() {
 
     // 1b) Sessions the physio ended: make sure the transcript gets processed (backup for the
     //     in-process watcher, e.g. after a server restart).
+    //     Also covers resumed sessions (already have a recording) whose new bot finished.
     const ended = await Session.find({
-      endedAt: { $gte: new Date(now - 6 * 60 * 60 * 1000) },
       recallBotId: { $nin: ['', null] },
-      transcriptText: { $in: ['', null] },
+      status: { $ne: 'approved' },
       recallStatus: { $nin: FINAL },
+      $or: [
+        { endedAt: { $gte: new Date(now - 6 * 60 * 60 * 1000) } },
+        { status: 'active', 'recordings.0': { $exists: true } },
+      ],
     }).select('_id recallBotId');
     for (const s of ended) {
       await finalizeEndedBot(s._id, s.recallBotId).catch(e => console.warn(`[scheduler] ended session ${s._id}: ${e.message}`));

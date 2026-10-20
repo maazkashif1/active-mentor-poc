@@ -5,6 +5,7 @@ const Prescription = require('../models/prescriptionModel');
 const ExerciseResult = require('../models/exerciseResultModel');
 const verifyToken = require('../middleware/auth');
 const { isSlotOpenAndFuture } = require('../services/scheduleService');
+const { IN_PROGRESS_STATUSES } = require('../services/transcriptService');
 
 const router = express.Router();
 
@@ -222,6 +223,11 @@ router.patch('/sessions/:id/approve', verifyToken, async (req, res) => {
   try {
     if (req.user.role !== 'physiologist') return res.status(403).json({ message: 'Forbidden' });
     const { approvedSummary } = req.body;
+    const existing = await Session.findOne({ _id: req.params.id, physiologistId: req.user.id }).select('status recallStatus');
+    if (!existing) return res.status(404).json({ message: 'Session not found' });
+    if (existing.status === 'active' && IN_PROGRESS_STATUSES.includes(existing.recallStatus)) {
+      return res.status(409).json({ message: 'The consultation is still being recorded or processed. End the session and wait for the summary before approving.' });
+    }
     const session = await Session.findOneAndUpdate(
       { _id: req.params.id, physiologistId: req.user.id },
       { status: 'approved', approvedSummary },
