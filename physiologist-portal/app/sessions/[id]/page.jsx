@@ -529,9 +529,10 @@ export default function SessionPage() {
               <hr className="hero-divider" style={{ marginTop: 6 }} />
               <div className="hero-patient">
                 <Avatar name={patientName} />
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="hero-name">{patientName}</p>
-                  {session.complaints && <p className="hero-program">{session.complaints}</p>}
+                  {/* Only the patient's own words — the structured answers are in the Patient intake card */}
+                  {intake.concern && <p className="hero-program truncate" title={intake.concern}>{intake.concern}</p>}
                 </div>
               </div>
 
