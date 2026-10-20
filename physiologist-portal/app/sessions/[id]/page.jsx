@@ -344,12 +344,15 @@ export default function SessionPage() {
           <article className="hero-card rise">
             <PlusPattern />
             <div className="hero-glow" aria-hidden="true" />
-            <EcgLine className="hero-ecg" />
             <div className="hero-body">
               <p className="hero-kicker">Consultation</p>
               <p className="hero-time">{session.slotTime}</p>
               <p className="hero-date">{formatLongDate(session.slotDate)}</p>
-              <hr className="hero-divider" />
+              {/* In the normal flow (not absolutely positioned) so it never runs through text. */}
+              <div className="mt-3 h-9 text-[#e07b3c] opacity-70" aria-hidden="true">
+                <EcgLine className="h-full w-full" />
+              </div>
+              <hr className="hero-divider" style={{ marginTop: 6 }} />
               <div className="hero-patient">
                 <Avatar name={patientName} />
                 <div className="min-w-0">
