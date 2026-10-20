@@ -84,7 +84,8 @@ function RomTrend({ results }) {
               <text x={PAD.l - 6} y={y(v) + 4} textAnchor="end" fontSize="11" fill="var(--muted)">{v}%</text>
             </g>
           ))}
-          <text x={W - PAD.r + 4} y={y(100) + 4} fontSize="11" fill="var(--muted)">Target</text>
+          {/* Target label at the left end of the 100% line, so it never collides with the latest-value label */}
+          <text x={PAD.l + 4} y={y(100) - 5} fontSize="11" fill="var(--muted)">Target</text>
           <path d={path} fill="none" stroke={SERIES} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
           {points.map((p, i) => (
             <circle key={i} cx={x(i)} cy={y(p.value)} r={active === i ? 5.5 : 4} fill={SERIES} stroke="#fff" strokeWidth="2" />
