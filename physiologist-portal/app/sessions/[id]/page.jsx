@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import AppShell from '../../../components/ui/AppShell';
@@ -99,13 +99,25 @@ function formatLongDate(slotDate) {
   return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-// "Speaker: words" lines → [{ speaker, text }]
+// Inserted by the server between recordings when a session is resumed.
+const RESUME_MARKER = '— Session resumed —';
+
+// Scribe states meaning "a bot is in the call or its recording is still being processed".
+const IN_PROGRESS_STATUSES = [
+  'creating', 'joining', 'bot.joining_call', 'bot.in_waiting_room', 'bot.in_call_not_recording',
+  'bot.in_call_recording', 'bot.call_ended', 'bot.recording_done', 'bot.done', 'processing', 'retry_processing',
+];
+
+const sameSoap = (a, b) => ['S', 'O', 'A', 'P'].every(k => (a?.[k] || '') === (b?.[k] || ''));
+
+// "Speaker: words" lines → [{ speaker, text }] (resume markers → { divider: true })
 function parseTranscript(text) {
   return String(text || '')
     .split('\n')
     .map(line => line.trim())
     .filter(Boolean)
     .map(line => {
+      if (line === RESUME_MARKER) return { divider: true };
       const i = line.indexOf(': ');
       return i > 0 ? { speaker: line.slice(0, i), text: line.slice(i + 2) } : { speaker: '', text: line };
     });
@@ -143,21 +155,42 @@ export default function SessionPage() {
   const [success, setSuccess] = useState('');
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [info, setInfo] = useState('');
+  const [pendingSummary, setPendingSummary] = useState(null); // regenerated summary the physio hasn't loaded yet
+  const lastAiSummary = useRef(null);
 
   // Sadaan Attempt — "meeting started" trigger: opens Meet immediately (so the popup isn't
   // blocked) and asks the server to send the scribe bot into the call right now.
+  // A recorded (not yet approved) session can be resumed: the scribe rejoins and the new
+  // part is added to the transcript. Approved sessions only reopen the Meet.
   function startSession() {
     if (!session?.meetingUrl) return;
+    const isApproved = session.status === 'approved';
+    const isResume = !isApproved && !!session.transcriptText && session.status !== 'active';
+    if (isResume && !window.confirm('Resume this session? The scribe will rejoin the meeting and the new part of the conversation will be added to the transcript and summary.')) return;
     window.open(session.meetingUrl, '_blank', 'noopener,noreferrer');
-    setStarting(true);
+    if (isApproved) {
+      setInfo('This session is approved and closed, so the scribe will not join. Book a follow-up for a new consultation.');
+      return;
+    }
+    setStarting(true); setError(''); setInfo('');
     api.post(`/api/sessions/${id}/start`, {})
       .then(r => {
-        if (r.started === false) setError('Scribe bot was not started: this session is outside its time window.');
+        if (r.started === false) {
+          const messages = {
+            outside_session_window: 'The scribe was not started: this session is outside its time window.',
+            approved: 'This session is approved and closed, so the scribe will not join.',
+          };
+          setError(messages[r.reason] || 'The scribe was not started.');
+        } else if (isResume) {
+          setInfo('Session resumed — admit the scribe in Google Meet. Press End session when you are done; the summary will be regenerated from the full conversation.');
+        }
         return r;
       })
       .then(r => setSession(prev => prev && ({
         ...prev,
-        status: prev.status === 'pending' ? 'active' : prev.status,
+        status: r.started === false ? prev.status : 'active',
+        endedAt: r.started === false ? prev.endedAt : null,
         recallStatus: r.recallStatus ?? prev.recallStatus,
         recallError: r.recallError ?? prev.recallError,
       })))
@@ -186,8 +219,8 @@ export default function SessionPage() {
 
   // Keep the scribe status live while the consultation is running / being processed.
   useEffect(() => {
-    if (!session?.meetingUrl || session.transcriptText) return;
-    if (!['pending', 'active'].includes(session.status) && session.recallStatus !== 'processing') return;
+    if (!session?.meetingUrl) return;
+    if (!['pending', 'active'].includes(session.status) && !['processing', 'retry_processing'].includes(session.recallStatus)) return;
     const t = setInterval(() => {
       api.get(`/api/sessions/${id}`).then(d => {
         const s = d.session ?? d;
@@ -201,7 +234,19 @@ export default function SessionPage() {
           transcriptText: s.transcriptText,
           aiSummary: s.aiSummary,
         }));
-        if (s.aiSummary) setSoap(cur => (cur.S || cur.O || cur.A || cur.P ? cur : parseSoap(s.approvedSummary || s.aiSummary)));
+        // A new AI summary (first one, or regenerated after a resume): load it unless the
+        // physio has edited the current one — then offer it instead of overwriting.
+        if (s.aiSummary && s.aiSummary !== lastAiSummary.current) {
+          const previous = parseSoap(lastAiSummary.current);
+          const next = parseSoap(s.aiSummary);
+          lastAiSummary.current = s.aiSummary;
+          setSoap(cur => {
+            const untouched = sameSoap(cur, previous) || !(cur.S || cur.O || cur.A || cur.P);
+            if (untouched) return next;
+            setPendingSummary(next);
+            return cur;
+          });
+        }
       }).catch(() => {});
     }, session?.endedAt ? 5000 : 10000);
     return () => clearInterval(t);
@@ -213,6 +258,7 @@ export default function SessionPage() {
       .then((d) => {
         const s = d.session ?? d;
         setSession(s);
+        lastAiSummary.current = s.aiSummary || null;
         setSoap(parseSoap(s.approvedSummary || s.aiSummary));
         if (s.followUpDate) setFollowUpDate(s.followUpDate.split('T')[0]);
         const patientId = s.patientId?._id || s.patientId;
@@ -300,15 +346,21 @@ export default function SessionPage() {
 
   const patientName = session.patientId?.name || 'Unknown patient';
   const approved = session.status === 'approved';
-  const showEnd = session.recallBotId && !session.endedAt && !session.transcriptText && session.status === 'active';
-  const awaitingTranscript = session.meetingUrl && !session.transcriptText;
+  const showEnd = session.recallBotId && !session.endedAt && session.status === 'active' && !approved;
+  const resumed = !!session.transcriptText && session.status === 'active';
+  const inProgress = session.status === 'active' && IN_PROGRESS_STATUSES.includes(session.recallStatus);
+  const awaitingTranscript = session.meetingUrl && (!session.transcriptText || resumed);
   const scribeLabel = SCRIBE_STATUS_LABEL[session.recallStatus] || session.recallStatus;
   const transcript = parseTranscript(session.transcriptText);
   const startLabel = starting
     ? 'Starting…'
-    : session.endedAt && !session.transcriptText
-      ? 'Rejoin & restart scribe'
-      : session.status === 'active' ? 'Join Google Meet' : 'Start session';
+    : approved
+      ? 'Open Google Meet'
+      : session.transcriptText && session.status !== 'active'
+        ? 'Resume session'
+        : session.endedAt
+          ? 'Rejoin & restart scribe'
+          : session.status === 'active' ? 'Join Google Meet' : 'Start session';
 
   return (
     <AppShell>
@@ -327,6 +379,12 @@ export default function SessionPage() {
         <div className="banner rise border border-rose/25 bg-rose-tint text-rose" role="alert">
           <p className="flex items-center gap-2"><AlertIcon size={18} /> {error}</p>
           <button type="button" className="btn-text-danger" onClick={() => setError('')}>Dismiss</button>
+        </div>
+      )}
+      {info && (
+        <div className="banner banner-copper rise" role="status">
+          <p>{info}</p>
+          <button type="button" className="link-copper" style={{ border: 0, background: 'none', cursor: 'pointer' }} onClick={() => setInfo('')}>Dismiss</button>
         </div>
       )}
       {success && (
@@ -402,9 +460,24 @@ export default function SessionPage() {
 
             {!session.meetingUrl ? (
               <p className="text-sm text-muted">The scribe needs a Google Meet link to join the consultation.</p>
+            ) : approved ? (
+              <p className="text-sm text-muted">
+                The summary is approved and this session is closed — the scribe will not join again.
+                For another consultation, book a follow-up.
+              </p>
+            ) : resumed && !session.endedAt ? (
+              <p className="text-sm text-muted">
+                Session resumed. Admit the scribe in Google Meet; when you press <strong>End session</strong>, the new part
+                is added to the transcript and the summary is regenerated from the full conversation.
+              </p>
+            ) : resumed ? (
+              <p className="text-sm text-muted">
+                Session ended — adding the new part to the transcript and regenerating the summary. This page updates automatically.
+              </p>
             ) : session.transcriptText ? (
               <p className="text-sm text-muted">
                 The consultation was recorded and transcribed. Review the transcript and the AI summary below.
+                If the consultation continues, <strong>Resume session</strong> adds to it until you approve the summary.
               </p>
             ) : session.endedAt ? (
               <p className="text-sm text-muted">
@@ -468,6 +541,17 @@ export default function SessionPage() {
                   The summary is filled in automatically once the consultation is transcribed. You can also write it yourself.
                 </p>
               )}
+              {pendingSummary && !approved && (
+                <div className="banner banner-copper" role="status">
+                  <p>The summary was regenerated with the resumed part of the consultation.</p>
+                  <div className="flex gap-2">
+                    <button type="button" className="btn-copper" onClick={() => { setSoap(pendingSummary); setPendingSummary(null); }}>
+                      Load updated summary
+                    </button>
+                    <button type="button" className="btn-ghost" onClick={() => setPendingSummary(null)}>Keep my edits</button>
+                  </div>
+                </div>
+              )}
               <div className="flex flex-col gap-4">
                 {SOAP_LABELS.map(({ key, label, hint }) => (
                   <div key={key}>
@@ -489,10 +573,14 @@ export default function SessionPage() {
               </div>
               {!approved && (
                 <div className="mt-5 flex flex-wrap items-center gap-3">
-                  <button type="button" className="btn-copper" onClick={approveSummary} disabled={saving}>
+                  <button type="button" className="btn-copper" onClick={approveSummary} disabled={saving || inProgress}>
                     {saving ? 'Saving…' : 'Approve summary'}
                   </button>
-                  <span className="form-hint" style={{ margin: 0 }}>Approving shares the summary with the patient.</span>
+                  <span className="form-hint" style={{ margin: 0 }}>
+                    {inProgress
+                      ? 'End the session and wait for the summary before approving.'
+                      : 'Approving shares the summary with the patient and closes the session.'}
+                  </span>
                 </div>
               )}
             </section>
@@ -503,11 +591,17 @@ export default function SessionPage() {
                 <SectionTitle
                   icon={<MessageIcon size={18} />}
                   title="Session transcript"
-                  aside={<span className="label-muted">{transcript.length} line{transcript.length === 1 ? '' : 's'}</span>}
+                  aside={<span className="label-muted">{transcript.filter(l => !l.divider).length} line{transcript.filter(l => !l.divider).length === 1 ? '' : 's'}</span>}
                 />
                 <div className="max-h-[420px] overflow-y-auto rounded-[14px] bg-white/45 p-3">
                   <ul className="m-0 flex list-none flex-col gap-3 p-0">
-                    {transcript.map((line, i) => (
+                    {transcript.map((line, i) => line.divider ? (
+                      <li key={i} className="flex items-center gap-3 py-1" aria-label="Session resumed">
+                        <span className="h-px flex-1 bg-[var(--hairline)]" />
+                        <span className="label-muted">Session resumed</span>
+                        <span className="h-px flex-1 bg-[var(--hairline)]" />
+                      </li>
+                    ) : (
                       <li key={i} className="flex gap-3">
                         <Avatar name={line.speaker || '?'} size="sm" />
                         <div className="min-w-0">

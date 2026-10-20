@@ -4,7 +4,7 @@ const Session = require('../models/sessionModel');
 const verifyToken = require('../middleware/auth');
 const calendarService = require('../services/calendarService');
 const { ensureBot } = require('../services/botOrchestrator');
-const { processTranscript } = require('../services/transcriptService');
+const { processTranscript, noNewRecording, isBotProcessed } = require('../services/transcriptService');
 const recallService = require('../services/recallService');
 const { watchBot } = require('../services/botWatcher');
 // Sadaan Attempt
@@ -201,6 +201,15 @@ router.post('/:id/start', verifyToken, async (req, res) => {
     if (!session.scheduledStart) session.scheduledStart = scheduledAt(session);
 
     const isPhysio = uid === String(session.physiologistId);
+    // Approved = signed off: the Meet can still be opened, but the scribe never rejoins.
+    if (session.status === 'approved') {
+      return res.json({ started: false, reason: 'approved', meetingUrl: session.meetingUrl, recallStatus: session.recallStatus });
+    }
+    // Only the physio can resume a session that has already been recorded.
+    const hasRecording = !!session.transcriptText || (session.recordings || []).length > 0;
+    if (hasRecording && !isPhysio) {
+      return res.json({ started: false, reason: 'already_recorded', meetingUrl: session.meetingUrl, recallStatus: session.recallStatus });
+    }
     const offset = Date.now() - session.scheduledStart.getTime();
     if ((!isPhysio && offset < -PATIENT_START_EARLY_MS) || offset > START_LATE_MS) {
       return res.json({ started: false, reason: 'outside_session_window', meetingUrl: session.meetingUrl, recallStatus: session.recallStatus });
@@ -213,10 +222,14 @@ router.post('/:id/start', verifyToken, async (req, res) => {
       if (!isPhysio) return res.json({ started: false, reason: 'session_ended', meetingUrl: session.meetingUrl, recallStatus: session.recallStatus });
       session.endedAt = null;
     }
+    // Resuming a recorded (not yet approved) session: it is live again until ended.
+    const resuming = isPhysio && hasRecording;
+    if (resuming && session.status === 'summarised') session.status = 'active';
     await session.save();
+    if (resuming) console.log(`[start] session=${session._id} resumed by physio`);
 
-    // An explicit start gives a fresh attempt budget if earlier bots gave up.
-    const retryable = ['failed', 'needs_retry', 'create_failed'].includes(session.recallStatus);
+    // An explicit start (or resume) gives a fresh attempt budget if earlier bots gave up.
+    const retryable = resuming || ['failed', 'needs_retry', 'create_failed'].includes(session.recallStatus);
     if (session.recallStatus === 'failed') {
       await Session.updateOne({ _id: session._id }, { recallStatus: 'needs_retry' });
     }
@@ -250,11 +263,11 @@ router.post('/:id/end', verifyToken, async (req, res) => {
     }
     console.log(`[end-session] session=${session._id} bot=${session.recallBotId} status=${session.recallStatus}`);
 
-    if (!session.transcriptText) {
+    if (!isBotProcessed(session, session.recallBotId)) {
       if (session.recallStatus === 'scheduled') {
         // Not in the call yet: just cancel it.
         await recallService.deleteBot(session.recallBotId);
-        await Session.updateOne({ _id: session._id }, { recallStatus: 'done_no_transcript', recallError: 'The session was ended before the scribe joined.' });
+        await noNewRecording(session._id, session.recallBotId);
       } else {
         await recallService.leaveCall(session.recallBotId);
         watchBot(session._id, session.recallBotId);

@@ -1,7 +1,7 @@
 const express = require('express');
 const { Webhook } = require('svix');
 const Session = require('../models/sessionModel');
-const { processTranscript } = require('../services/transcriptService');
+const { processTranscript, isBotProcessed } = require('../services/transcriptService');
 
 const router = express.Router();
 
@@ -101,8 +101,10 @@ router.post(['/recall', '/recall/:sessionId'], express.raw({ type: 'application/
       return;
     }
 
-    // Don't overwrite state once the transcript pipeline has started/finished.
-    if (session.transcriptText || session.recallStatus === 'processing') return;
+    // Status events only matter for the session's current, not-yet-processed bot, and never
+    // overwrite the transcript pipeline's own state or a signed-off session.
+    if (botId !== session.recallBotId || isBotProcessed(session, botId)) return;
+    if (session.status === 'approved' || ['processing', 'retry_processing'].includes(session.recallStatus)) return;
 
     const update = { recallStatus: parsed.event };
     if (parsed.event === 'bot.fatal') {
