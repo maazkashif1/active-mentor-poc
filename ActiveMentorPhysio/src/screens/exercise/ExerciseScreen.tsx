@@ -7,6 +7,9 @@ import {
   StatusBar,
   Platform,
   Dimensions,
+  Image,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -41,6 +44,8 @@ const CALIBRATION_MIN_FRAMES = 10;  // ~10fps worst case × 1.5s
 const CALIBRATION_MAX_STDDEV = 10;  // generous — breathing/pose jitter is real
 const CALIBRATION_MAX_REST = 40;
 const CALIBRATION_MAX_RETRIES = 2;
+// Time to prop the phone up and step into frame before calibration starts.
+const POSITIONING_SECONDS = 5;
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -78,6 +83,7 @@ export default function ExerciseScreen({ navigation, route }: Props) {
   const [side, setSide] = useState<Side>(prescribedSide ?? 'both');
   const [active, setActive] = useState(false);
   const [calibrating, setCalibrating] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null); // positioning, before calibration
   const [calibFailed, setCalibFailed] = useState(false);
   const [calibProgress, setCalibProgress] = useState(0); // 0..CALIBRATION_MS
   const [reps, setReps] = useState(0);
@@ -107,6 +113,10 @@ export default function ExerciseScreen({ navigation, route }: Props) {
   // Recording
   const cameraRef = useRef<MultiPoseCameraHandle>(null);
   const videoReadyRef = useRef<((path: string | null) => void) | null>(null);
+  // Navigation guards: confirm before abandoning a session; never leave mid-save.
+  const inSessionRef = useRef(false);   // calibrating or exercising
+  const savingRef = useRef(false);      // Done pressed, result being saved
+  const allowLeaveRef = useRef(false);  // set right before we navigate away ourselves
 
   // ── Frame callback ────────────────────────────────────────────────────────
   // Uses refs only — no state captured — so the worklet never holds a stale
@@ -236,9 +246,10 @@ export default function ExerciseScreen({ navigation, route }: Props) {
     calibDoneRef.current = false;
     calibAttemptRef.current = 0;
     restCalibratedRef.current = false;
-    isCalibRef.current = true;
+    isCalibRef.current = false; // nothing is measured while the user gets into position
     isActiveRef.current = false;
     videoReadyRef.current = null;
+    inSessionRef.current = true;
 
     setReps(0); setAssistedReps(0); setAngle(null); setRawAngle(null);
     setEffectiveEffort(validSaved ?? originalEffort);
@@ -247,9 +258,30 @@ export default function ExerciseScreen({ navigation, route }: Props) {
     setCalibProgress(0);
     setCalibFailed(false);
     setRest(prescriptionRest);
+    setCountdown(POSITIONING_SECONDS);
+  };
+
+  // Positioning finished (or skipped) → measure the resting angle.
+  const beginCalibration = useCallback(() => {
+    calibFramesRef.current = [];
+    calibDoneRef.current = false;
+    smoothedAngleRef.current = null;
+    isCalibRef.current = true;
+    setCountdown(null);
+    setCalibProgress(0);
     setCalibrating(true);
     startCalibTimer();
-  };
+  }, [startCalibTimer]);
+
+  useEffect(() => {
+    if (countdown == null) return;
+    if (countdown <= 0) {
+      beginCalibration();
+      return;
+    }
+    const t = setTimeout(() => setCountdown(c => (c == null ? null : c - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [countdown, beginCalibration]);
 
   const retryCalibration = () => {
     calibAttemptRef.current += 1;
@@ -289,9 +321,43 @@ export default function ExerciseScreen({ navigation, route }: Props) {
   // Cleanup timer on unmount
   useEffect(() => () => { if (calibTimerRef.current) clearTimeout(calibTimerRef.current); }, []);
 
+  // Leaving the screen: free to go when idle; confirm while exercising (the attempt is
+  // discarded); blocked while the result is being saved.
+  useEffect(() => navigation.addListener('beforeRemove', (e) => {
+    if (allowLeaveRef.current || (!inSessionRef.current && !savingRef.current)) return;
+    e.preventDefault();
+    if (savingRef.current) return;
+    Alert.alert(
+      'Leave exercise?',
+      'This attempt will not be saved.',
+      [
+        { text: 'Stay', style: 'cancel' },
+        {
+          text: 'Leave',
+          style: 'destructive',
+          onPress: () => {
+            allowLeaveRef.current = true;
+            isActiveRef.current = false;
+            isCalibRef.current = false;
+            inSessionRef.current = false;
+            if (calibTimerRef.current) clearTimeout(calibTimerRef.current);
+            videoReadyRef.current = null;
+            try { cameraRef.current?.stopRecording(); } catch {}
+            navigation.dispatch(e.data.action);
+          },
+        },
+      ],
+    );
+  }), [navigation]);
+
   const finish = async () => {
+    if (savingRef.current) return;
+    // Stop counting reps, but keep this screen (with a "Saving…" overlay) until the result
+    // is saved. Switching to the idle Start screen here let a new attempt begin while the
+    // previous one was still saving — then it jumped to the summary mid-attempt.
+    savingRef.current = true;
+    inSessionRef.current = false;
     isActiveRef.current = false;
-    setActive(false);
     setSubmitting(true);
 
     // Stop recording and wait for the file path (5 s timeout, non-fatal)
@@ -304,6 +370,7 @@ export default function ExerciseScreen({ navigation, route }: Props) {
           cameraRef.current!.stopRecording();
         });
         videoReadyRef.current = null;
+        setActive(false); // recording stopped — the camera can be released
         if (videoPath) videoUrl = await uploadVideoToR2(videoPath);
       } catch {
         // non-fatal — result still submitted without video
@@ -328,8 +395,9 @@ export default function ExerciseScreen({ navigation, route }: Props) {
         );
       } catch {}
     }
-    setSubmitting(false);
-    navigation.navigate('ExerciseSummary', {
+    // Replace (not push) so Back from the summary can't return to this finished screen.
+    allowLeaveRef.current = true;
+    navigation.replace('ExerciseSummary', {
       exercise, reps, assistedReps, prescription,
       originalTargetAngle: def.effort === 'increase' ? originalEffort : undefined,
       adaptedTargetAngle: finalAdapted ?? undefined,
@@ -340,11 +408,30 @@ export default function ExerciseScreen({ navigation, route }: Props) {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  const backButton = (onCamera: boolean) => (
+    <TouchableOpacity
+      style={[s.backBtn, onCamera && s.backBtnOnCamera, { top: insets.top + 8 }]}
+      onPress={() => navigation.goBack()}
+      disabled={submitting}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel="Go back"
+      hitSlop={8}
+    >
+      <Image
+        source={require('../../assets/images/figma/profile/icon_back.png')}
+        style={s.backIcon}
+        resizeMode="contain"
+      />
+    </TouchableOpacity>
+  );
+
   // Idle screen — no camera
-  if (!active && !calibrating && !calibFailed) {
+  if (!active && !calibrating && !calibFailed && !submitting && countdown == null) {
     return (
       <View style={[s.center, { paddingTop: insets.top, paddingBottom: insets.bottom + 24 }]}>
         <StatusBar barStyle="dark-content" />
+        {backButton(false)}
         <Text style={s.exTitle}>{exercise.name}</Text>
         <Text style={s.detail}>
           {prescription ? `Target: ${prescription.targetReps} reps · ` : ''}
@@ -399,9 +486,24 @@ export default function ExerciseScreen({ navigation, route }: Props) {
         effort={effectiveEffort}
         rest={rest}
         floor={CONFIDENCE_FLOOR}
-        isActive={active || calibrating || calibFailed}
+        isActive={active || calibrating || calibFailed || countdown != null}
         onFrame={onFrame}
       />
+
+      {/* ── Positioning countdown (camera live, nothing measured yet) ── */}
+      {countdown != null && (
+        <View style={[s.positionOverlay, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
+          <View style={s.positionCard}>
+            <Text style={s.positionEyebrow}>Get into position</Text>
+            <Text style={s.positionCount} accessibilityLiveRegion="polite">{countdown}</Text>
+            <Text style={s.positionTip}>Prop your phone up so your head, shoulders and arms are in view.</Text>
+            <Text style={s.positionTip}>Stand about 2 m away, facing the camera, arms relaxed by your side.</Text>
+            <TouchableOpacity style={[s.btn, s.positionBtn]} onPress={beginCalibration} activeOpacity={0.85}>
+              <Text style={s.btnText}>I'm ready</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* ── Calibration measuring overlay ── */}
       {calibrating && (
@@ -437,8 +539,19 @@ export default function ExerciseScreen({ navigation, route }: Props) {
         </View>
       )}
 
+      {/* ── Saving the result ── */}
+      {submitting && (
+        <View style={[s.calibRetryOverlay, { paddingTop: insets.top, paddingBottom: insets.bottom + 24 }]}>
+          <ActivityIndicator color={INK} size="large" />
+          <Text style={[s.calibRetryTitle, { marginTop: 16 * SCALE }]}>Saving your session…</Text>
+          <Text style={s.calibRetryHint}>Uploading your recording and results for your physiologist.</Text>
+        </View>
+      )}
+
+      {!submitting && backButton(!calibFailed)}
+
       {/* ── Exercise overlays (active only) ── */}
-      {active && (
+      {active && !submitting && (
         <>
           <View style={[s.overlay, { top: insets.top + 16 }]} pointerEvents="none">
             <View style={s.hudCard}>
@@ -566,6 +679,44 @@ const s = StyleSheet.create({
     fontSize: 14 * SCALE,
     color: 'rgba(51,51,51,0.5)',
   },
+  positionOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 16 * SCALE,
+  },
+  positionCard: {
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderRadius: 20,
+    paddingVertical: 20 * SCALE,
+    paddingHorizontal: 20 * SCALE,
+    alignItems: 'center',
+    gap: 6 * SCALE,
+  },
+  positionEyebrow: {
+    fontFamily: font('Medium'),
+    fontSize: 12 * SCALE,
+    fontWeight: '500',
+    color: 'rgba(51,51,51,0.55)',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  positionCount: {
+    fontFamily: font('Medium'),
+    fontSize: 56 * SCALE,
+    lineHeight: 64 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
+  positionTip: {
+    fontFamily: font('Light'),
+    fontSize: 13 * SCALE,
+    lineHeight: 19 * SCALE,
+    color: 'rgba(51,51,51,0.65)',
+    textAlign: 'center',
+  },
+  positionBtn: { marginTop: 10 * SCALE, alignSelf: 'stretch' },
   calibOverlay: {
     position: 'absolute',
     top: 0,
@@ -660,6 +811,19 @@ const s = StyleSheet.create({
     marginBottom: 8 * SCALE,
   },
   overlay: { position: 'absolute', alignSelf: 'center', alignItems: 'center' },
+  backBtn: {
+    position: 'absolute',
+    left: 16 * SCALE,
+    width: 40 * SCALE,
+    height: 40 * SCALE,
+    borderRadius: 20 * SCALE,
+    backgroundColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 30,
+  },
+  backBtnOnCamera: { backgroundColor: 'rgba(255,255,255,0.92)' },
+  backIcon: { width: 18 * SCALE, height: 18 * SCALE },
   hudCard: {
     backgroundColor: 'rgba(255,255,255,0.92)',
     borderRadius: 18,

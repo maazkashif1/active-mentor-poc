@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { View, Text, StyleSheet, LayoutChangeEvent } from 'react-native';
+import { View, Text, StyleSheet, LayoutChangeEvent, Platform } from 'react-native';
 import {
   Camera,
   useCameraDevice,
@@ -91,8 +91,10 @@ const Live = React.forwardRef<MultiPoseCameraHandle, any>(
   const tap = useRef<{ x: number; y: number } | null>(null);
 
   // Vision Camera v5: recording lives on a VideoOutput Recorder, not CameraRef
+  // 720p, ~2.5 Mbps: plenty for reviewing form, and small enough to upload on mobile data.
   const videoOutput = useVideoOutput({
     targetResolution: CommonResolutions.HD_16_9,
+    targetBitRate: 2_500_000,
     enableAudio: false,
     fileType: 'mp4',
   });
@@ -103,6 +105,18 @@ const Live = React.forwardRef<MultiPoseCameraHandle, any>(
       startingRef.current = true;
       (async () => {
         try {
+          // iOS defaults to HEVC, which many browsers can't play. Record H.264 so physios
+          // can watch it anywhere (the server also converts anything that isn't H.264).
+          // Android (CameraX) already records H.264.
+          if (Platform.OS === 'ios') {
+            try {
+              if (videoOutput.getSupportedVideoCodecs().includes('h264')) {
+                await videoOutput.setOutputSettings({ codec: 'h264' });
+              }
+            } catch {
+              // not fatal — the server-side conversion covers it
+            }
+          }
           const recorder = await videoOutput.createRecorder({});
           recorderRef.current = recorder;
           await recorder.startRecording(
