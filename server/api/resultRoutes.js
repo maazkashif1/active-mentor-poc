@@ -1,6 +1,8 @@
 const express = require('express');
 const ExerciseResult = require('../models/exerciseResultModel');
 const Prescription = require('../models/prescriptionModel');
+const { keyFromUrl } = require('../services/storage');
+const { enqueueVideo, playbackFields } = require('../services/videoService');
 const verifyToken = require('../middleware/auth');
 const { analyzeExerciseResult } = require('../services/summaryService');
 
@@ -54,6 +56,8 @@ router.post('/', verifyToken, async (req, res) => {
       restAngle: restAngle ?? null,
       restCalibrated: restCalibrated ?? false,
       videoUrl: videoUrl ?? null,
+      videoKey: keyFromUrl(videoUrl),
+      videoStatus: videoUrl ? 'pending' : 'none',
       analysis: { romPercent, consistency, assistedPercent, aiSummary },
     });
 
@@ -61,6 +65,7 @@ router.post('/', verifyToken, async (req, res) => {
       currentAdaptedAngle: adaptedTargetAngle ?? null,
     });
 
+    if (videoUrl) enqueueVideo(result._id); // make it playable in every browser (background)
     res.status(201).json(result);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -70,7 +75,7 @@ router.post('/', verifyToken, async (req, res) => {
 router.get('/prescription/:id', verifyToken, async (req, res) => {
   try {
     const results = await ExerciseResult.find({ prescriptionId: req.params.id }).sort({ createdAt: -1 });
-    res.json(results);
+    res.json(await Promise.all(results.map(playbackFields)));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

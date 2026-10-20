@@ -17,7 +17,14 @@ const exerciseResultSchema = new mongoose.Schema({
   // Calibration metadata — lets physio see per-session rest angle
   restAngle: { type: Number, default: null },
   restCalibrated: { type: Boolean, default: false },
-  videoUrl: { type: String, default: null },
+  videoUrl: { type: String, default: null }, // as uploaded (legacy: an expiring presigned URL — not served)
+  // Playback: the object key of a browser-safe (H.264 MP4) file; links are signed per request.
+  videoKey: { type: String, default: null },
+  videoOriginalKey: { type: String, default: null }, // original upload when it had to be converted
+  videoStatus: { type: String, enum: ['none', 'pending', 'processing', 'ready', 'failed'] },
+  videoError: { type: String, default: '' },
+  videoAttempts: { type: Number, default: 0 },
+  videoProcessingAt: { type: Date, default: null },
   // Computed analytics + AI summary (populated at save time)
   analysis: {
     romPercent: { type: Number, default: null },

@@ -6,6 +6,7 @@ const ExerciseResult = require('../models/exerciseResultModel');
 const verifyToken = require('../middleware/auth');
 const { isSlotOpenAndFuture } = require('../services/scheduleService');
 const { IN_PROGRESS_STATUSES } = require('../services/transcriptService');
+const { playbackFields } = require('../services/videoService');
 
 const router = express.Router();
 
@@ -199,6 +200,72 @@ router.get('/activity', verifyToken, async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(20);
     res.json(results);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Exercise metrics for one patient (portal Patients page): every prescription this physio
+// issued with all of its attempts, per-prescription stats and patient-level totals.
+const avg = arr => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+const round = n => (n == null ? null : Math.round(n));
+const dayKey = d => new Date(d).toISOString().slice(0, 10);
+
+router.get('/patients/:patientId/exercise', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'physiologist') return res.status(403).json({ message: 'Forbidden' });
+    const prescriptions = await Prescription.find({ physiologistId: req.user.id, patientId: req.params.patientId })
+      .populate('sessionId', 'slotDate slotTime status')
+      .sort({ createdAt: -1 });
+    const results = await ExerciseResult.find({ prescriptionId: { $in: prescriptions.map(p => p._id) } })
+      .sort({ createdAt: -1 });
+
+    const bySession = new Set(); // latest prescription per session = the current plan
+    const items = prescriptions.map((p) => {
+      const sid = String(p.sessionId?._id || p.sessionId);
+      const current = !bySession.has(sid);
+      bySession.add(sid);
+      const rs = results.filter(r => String(r.prescriptionId) === String(p._id));
+      const rom = rs.map(r => r.analysis?.romPercent).filter(v => v != null);
+      const cons = rs.map(r => r.analysis?.consistency).filter(v => v != null);
+      return {
+        prescription: p,
+        current,
+        stats: {
+          attempts: rs.length,
+          totalReps: rs.reduce((s, r) => s + (r.reps || 0), 0),
+          avgScore: round(avg(rs.map(r => r.score || 0))),
+          bestScore: rs.length ? Math.max(...rs.map(r => r.score || 0)) : null,
+          avgROM: round(avg(rom)),
+          bestROM: rom.length ? round(Math.max(...rom)) : null,
+          avgConsistency: round(avg(cons)),
+          assistedPercent: round(avg(rs.map(r => r.analysis?.assistedPercent).filter(v => v != null))),
+          lastAttemptAt: rs[0]?.createdAt || null,
+        },
+        results: rs,
+      };
+    })
+      // Hide superseded duplicates that were never used; keep anything with attempts.
+      .filter(i => i.current || i.stats.attempts > 0);
+
+    // Fresh, browser-safe playback links (stored presigned URLs expire after 7 days).
+    for (const i of items) i.results = await Promise.all(i.results.map(playbackFields));
+
+    const allRom = results.map(r => r.analysis?.romPercent).filter(v => v != null);
+    const days = new Set(results.map(r => dayKey(r.createdAt)));
+    const since14 = Date.now() - 14 * 86400000;
+    res.json({
+      overall: {
+        plans: items.filter(i => i.current).length,
+        attempts: results.length,
+        totalReps: results.reduce((s, r) => s + (r.reps || 0), 0),
+        avgScore: round(avg(results.map(r => r.score || 0))),
+        avgROM: round(avg(allRom)),
+        activeDays14: [...days].filter(d => new Date(d).getTime() >= since14 - 86400000).length,
+        lastAttemptAt: results[0]?.createdAt || null,
+      },
+      prescriptions: items,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

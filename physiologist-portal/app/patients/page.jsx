@@ -13,6 +13,7 @@ import ErrorState from '../../components/ui/ErrorState';
 import { CalendarIcon, ChevronRightIcon, UsersIcon } from '../../components/ui/Icons';
 import { ListSkeleton, ProfileSkeleton } from '../../components/ui/Skeletons';
 import { api, getToken } from '../../lib/api';
+import ExerciseProgress from './ExerciseProgress';
 
 export default function PatientsPage() {
   const router = useRouter();
@@ -195,7 +196,9 @@ function PatientProfile({ patient }) {
         </div>
       </div>
 
-      <div className="card-head" style={{ marginTop: 18 }}>
+      <ExerciseProgress key={patient._id} patientId={patient._id} />
+
+      <div className="card-head" style={{ marginTop: 24 }}>
         <h3 className="card-title">Session history</h3>
         <Link href={historyHref} className="link-copper">View full history →</Link>
       </div>
@@ -209,7 +212,11 @@ function PatientProfile({ patient }) {
           <span className="icon-tile"><CalendarIcon size={16} /></span>
           <span className="patient-meta">
             <span className="session-title">{s.slotDate} at {s.slotTime}</span>
-            {s.complaints ? <span className="session-sub" style={{ fontStyle: 'italic' }}>{s.complaints}</span> : null}
+            {s.complaints ? (
+              <span className="session-sub" style={{ fontStyle: 'italic' }}>
+                {s.complaints.split('\n')[0].replace(/^\[seeded\]\s*/, '')}
+              </span>
+            ) : null}
           </span>
           <StatusPill status={s.status} />
         </Link>
