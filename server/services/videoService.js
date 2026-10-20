@@ -79,7 +79,8 @@ async function processResultVideo(resultId) {
     {
       _id: resultId,
       videoStatus: { $nin: ['ready', 'processing'] },
-      videoAttempts: { $lt: MAX_ATTEMPTS },
+      // Results saved before video processing existed have no counter: treat as 0.
+      $or: [{ videoAttempts: { $exists: false } }, { videoAttempts: null }, { videoAttempts: { $lt: MAX_ATTEMPTS } }],
     },
     { videoStatus: 'processing', videoProcessingAt: new Date(), $inc: { videoAttempts: 1 } },
     { new: true },
