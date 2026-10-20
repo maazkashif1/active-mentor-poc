@@ -15,6 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { getSession } from '../../services/sessionService';
+import { useAppStore } from '../../stores/appStore';
+import { exerciseDisplayName } from '../../utils/exerciseLabels';
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -43,6 +45,58 @@ function parseSoap(raw: string) {
   return null;
 }
 
+// The booking note is built from the intake screens (CareArea → KneeIntake → SafetyCheck),
+// one "Label: value" line per answer. Show each answer under the question that was asked.
+const SAFETY_QUESTIONS = [
+  'Are you currently experiencing fever along with your symptoms?',
+  'Does your pain regularly wake you at night or remain severe while resting?',
+  'Have you experienced unexplained weight loss?',
+];
+const DEFAULT_CONCERN = ['Initial assessment', 'Appointment intake'];
+
+type QA = { q: string; a: string; flag?: boolean };
+
+function parseIntake(raw: string): QA[] {
+  const out: QA[] = [];
+  let area = '';
+  String(raw || '')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(Boolean)
+    .forEach((line, i) => {
+      const m = line.match(/^(Area|Surgery|Onset|Pain|Safety):\s*(.*)$/i);
+      if (!m) {
+        const text = line.replace(/^\[seeded\]\s*/i, '');
+        if (!DEFAULT_CONCERN.includes(text)) {
+          out.push({ q: i === 0 ? 'What brings you in today?' : 'Additional notes', a: text });
+        }
+        return;
+      }
+      const key = m[1].toLowerCase();
+      const value = m[2].trim();
+      if (key === 'area') {
+        const am = value.match(/^(.*?)\s*\((.*)\)\s*$/);
+        area = am ? am[1] : value;
+        out.push({ q: 'Which area needs care?', a: am ? `${am[1]} · ${am[2]}` : value });
+      } else if (key === 'surgery') {
+        const part = (area || 'area').toLowerCase();
+        out.push({ q: `Have you had surgery on ${part === 'joints' ? 'these joints' : `this ${part}`}?`, a: value });
+      } else if (key === 'onset') {
+        out.push({ q: 'When did the problem begin?', a: value });
+      } else if (key === 'pain') {
+        out.push({ q: 'How much pain were you feeling?', a: value });
+      } else if (key === 'safety') {
+        value.split(',').map(v => v.trim()).filter(Boolean).forEach((a, idx) => {
+          out.push({ q: SAFETY_QUESTIONS[idx] || `Safety question ${idx + 1}`, a, flag: /^yes$/i.test(a) });
+        });
+      }
+    });
+  return out;
+}
+
+const sessionIdOf = (p: any) => String(p?.sessionId?._id || p?.sessionId || '');
+const timeOf = (p: any) => new Date(p?.updatedAt || p?.createdAt || 0).getTime();
+
 function daysUntil(dateStr: string) {
   const target = new Date(dateStr);
   const now = new Date();
@@ -56,15 +110,25 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
   const { session: navSession } = route.params as { session: any };
   const [session, setSession] = useState<any>(navSession);
   const [loading, setLoading] = useState(true);
+  const prescriptions = useAppStore(st => st.prescriptions);
+  const rxLoading = useAppStore(st => st.loading.prescriptions);
+  const fetchPrescriptions = useAppStore(st => st.fetchPrescriptions);
 
   useEffect(() => {
     getSession(navSession._id)
       .then(setSession)
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [navSession._id]);
+    fetchPrescriptions();
+  }, [navSession._id, fetchPrescriptions]);
 
   const soap = parseSoap(session.approvedSummary || session.aiSummary);
+  const approved = session.status === 'approved';
+  const intake = parseIntake(session.complaints);
+  // The session's current plan = its most recent prescription (the portal edits that one).
+  const plan = prescriptions
+    .filter((p: any) => sessionIdOf(p) === String(session._id))
+    .sort((a: any, b: any) => timeOf(b) - timeOf(a))[0];
   const followUp = session.followUpDate ? new Date(session.followUpDate) : null;
   const followUpDays = followUp ? daysUntil(session.followUpDate) : null;
 
@@ -123,11 +187,15 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
           <Row label="Status" value={session.status || '—'} last />
         </View>
 
-        {session.complaints ? <Section title="Complaints" body={session.complaints} /> : null}
-
         {soap ? (
           <View style={s.section}>
-            <Text style={s.sectionTitle}>Physiologist notes</Text>
+            <View style={s.sectionHead}>
+              <Text style={[s.sectionTitle, { marginBottom: 0 }]}>Consultation summary</Text>
+              {!approved ? <Text style={s.draftPill}>Draft</Text> : null}
+            </View>
+            {!approved ? (
+              <Text style={s.draftNote}>Your physiotherapist is still reviewing this summary.</Text>
+            ) : null}
             {[
               { key: 'S', label: 'Subjective' },
               { key: 'O', label: 'Objective' },
@@ -143,7 +211,60 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
             )}
           </View>
         ) : session.aiSummary ? (
-          <Section title="Medical summary" body={session.aiSummary} />
+          <Section title="Consultation summary" body={session.aiSummary} />
+        ) : null}
+
+        {/* Exercise plan prescribed in this session */}
+        {plan ? (
+          <View style={s.planWrap}>
+            <Text style={s.planHeading}>Your exercise plan</Text>
+            <TouchableOpacity
+              style={s.card}
+              onPress={() =>
+                navigation.navigate('Exercise', {
+                  exercise: {
+                    id: plan.exerciseId || 'hand_raise',
+                    name: exerciseDisplayName(plan),
+                    description: plan.notes?.trim() || 'As prescribed by your physiologist',
+                  },
+                  prescription: plan,
+                })
+              }
+              activeOpacity={0.88}
+            >
+              <Text style={s.exName}>{exerciseDisplayName(plan)}</Text>
+              <Text style={s.exDesc}>{plan.notes?.trim() || 'As prescribed by your physiologist'}</Text>
+              <Text style={s.prescDetail}>
+                {plan.targetReps} reps · Raise {plan.raiseAngleThreshold}° · Lower {plan.lowerAngleThreshold}°
+                {plan.side && plan.side !== 'both' ? ` · ${plan.side} side` : ''}
+              </Text>
+              <View style={s.cardCta}>
+                <Text style={s.start}>Start with camera</Text>
+                <Text style={s.startArrow}>→</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        ) : rxLoading && approved ? (
+          <ActivityIndicator color={INK} style={{ marginTop: 16 }} />
+        ) : approved ? (
+          <Section title="Your exercise plan" body="No exercises were prescribed for this session." />
+        ) : session.aiSummary || session.transcriptText ? (
+          <Section
+            title="Your exercise plan"
+            body="Your physiotherapist will add exercises here after reviewing this session."
+          />
+        ) : null}
+
+        {intake.length ? (
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Your intake answers</Text>
+            {intake.map(({ q, a, flag }, i) => (
+              <View key={`${q}-${i}`} style={[s.qaItem, i === intake.length - 1 && { marginBottom: 0 }]}>
+                <Text style={s.qaQ}>{q}</Text>
+                <Text style={[s.qaA, flag && s.qaFlag]}>{a}</Text>
+              </View>
+            ))}
+          </View>
         ) : null}
 
         {session.meetingUrl && (session.status === 'pending' || session.status === 'active') ? (
@@ -286,6 +407,98 @@ const s = StyleSheet.create({
     color: 'rgba(51,51,51,0.7)',
   },
   soapItem: { marginBottom: 14 * SCALE },
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10 * SCALE,
+  },
+  draftPill: {
+    fontFamily: font('Medium'),
+    fontSize: 11 * SCALE,
+    fontWeight: '500',
+    color: INK,
+    backgroundColor: ACCENT,
+    borderRadius: 10,
+    overflow: 'hidden',
+    paddingHorizontal: 8 * SCALE,
+    paddingVertical: 2 * SCALE,
+  },
+  draftNote: {
+    fontFamily: font('Light'),
+    fontSize: 12 * SCALE,
+    color: 'rgba(51,51,51,0.5)',
+    marginBottom: 12 * SCALE,
+  },
+  qaItem: { marginBottom: 12 * SCALE },
+  qaQ: {
+    fontFamily: font('Light'),
+    fontSize: 12 * SCALE,
+    lineHeight: 17 * SCALE,
+    color: 'rgba(51,51,51,0.5)',
+  },
+  qaA: {
+    fontFamily: font('Medium'),
+    fontSize: 14 * SCALE,
+    fontWeight: '500',
+    color: INK,
+    marginTop: 2 * SCALE,
+  },
+  qaFlag: { color: '#b3392f' },
+  // Exercise plan card — same look as the ExerciseMenu "Start with camera" card.
+  planWrap: { marginTop: 16 * SCALE },
+  planHeading: {
+    fontFamily: font('Medium'),
+    fontSize: 11 * SCALE,
+    fontWeight: '500',
+    color: 'rgba(51,51,51,0.45)',
+    marginBottom: 10 * SCALE,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  card: {
+    backgroundColor: '#f7f8fb',
+    borderRadius: 18,
+    padding: 20 * SCALE,
+    gap: 6 * SCALE,
+  },
+  exName: {
+    fontFamily: font('Medium'),
+    fontSize: 18 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
+  exDesc: {
+    fontFamily: font('Light'),
+    fontSize: 13 * SCALE,
+    color: 'rgba(51,51,51,0.5)',
+  },
+  prescDetail: {
+    fontFamily: font('Light'),
+    fontSize: 12 * SCALE,
+    color: 'rgba(51,51,51,0.45)',
+    marginTop: 2 * SCALE,
+  },
+  cardCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12 * SCALE,
+    paddingTop: 14 * SCALE,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(51,51,51,0.1)',
+  },
+  start: {
+    fontFamily: font('Medium'),
+    fontSize: 14 * SCALE,
+    fontWeight: '500',
+    color: INK,
+  },
+  startArrow: {
+    fontFamily: font('Light'),
+    fontSize: 16 * SCALE,
+    color: 'rgba(51,51,51,0.4)',
+  },
   soapLabel: {
     fontFamily: font('Medium'),
     fontSize: 11 * SCALE,
