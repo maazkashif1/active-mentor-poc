@@ -123,6 +123,83 @@ function parseTranscript(text) {
     });
 }
 
+// ── Patient intake ────────────────────────────────────────────────────────────
+// The app books with a note built from the intake screens (DoctorProfile → CareArea →
+// KneeIntake → SafetyCheck), one "Label: value" line per answer, e.g.
+//   Pain in my left knee when climbing stairs
+//   Area: Knee (Left)
+//   Surgery: No
+//   Onset: 1–4 weeks
+//   Pain: 6/10
+//   Safety: No, No, Yes
+// These are the questions exactly as the patient saw them in the app.
+const SAFETY_QUESTIONS = [
+  'Are you currently experiencing fever along with your symptoms?',
+  'Does your pain regularly wake you at night or remain severe while resting?',
+  'Have you experienced unexplained weight loss?',
+];
+const SIDE_QUESTION = { Knee: 'Which knee?', Shoulder: 'Which shoulder?', Elbow: 'Which elbow?' };
+const DEFAULT_CONCERN = ['Initial assessment', 'Appointment intake'];
+
+function parseIntake(raw) {
+  const out = { concern: '', area: '', side: '', answers: [], pain: null, safety: [], other: [] };
+  const lines = String(raw || '').split('\n').map(l => l.trim()).filter(Boolean);
+  lines.forEach((line, i) => {
+    const m = line.match(/^(Area|Surgery|Onset|Pain|Safety):\s*(.*)$/i);
+    if (!m) {
+      const text = line.replace(/^\[seeded\]\s*/i, '');
+      if (i === 0 && !out.concern) out.concern = DEFAULT_CONCERN.includes(text) ? '' : text;
+      else out.other.push(text);
+      return;
+    }
+    const key = m[1].toLowerCase();
+    const value = m[2].trim();
+    if (key === 'area') {
+      const am = value.match(/^(.*?)\s*\((.*)\)\s*$/);
+      out.area = (am ? am[1] : value).replace(/^—$/, '');
+      out.side = am ? am[2] : '';
+    } else if (key === 'surgery') {
+      const part = (out.area || 'area').toLowerCase();
+      out.answers.push({ q: `Have you had surgery on ${part === 'joints' ? 'these joints' : `this ${part}`}?`, a: value });
+    } else if (key === 'onset') {
+      out.answers.push({ q: 'When did the problem begin?', a: value });
+    } else if (key === 'pain') {
+      const n = parseInt(value, 10);
+      out.pain = Number.isFinite(n) ? n : null;
+      out.answers.push({ q: 'How much pain are you feeling right now?', a: value, pain: true });
+    } else if (key === 'safety') {
+      value.split(',').map(v => v.trim()).filter(Boolean).forEach((a, idx) => {
+        out.safety.push({ q: SAFETY_QUESTIONS[idx] || `Safety question ${idx + 1}`, a });
+      });
+    }
+  });
+  return out;
+}
+
+function PainMeter({ value }) {
+  if (value == null) return null;
+  const tone = value >= 7 ? 'var(--rose)' : value >= 4 ? 'var(--amber-dot)' : 'var(--sage)';
+  return (
+    <div className="mt-2 flex items-center gap-2" aria-hidden="true">
+      <div className="flex flex-1 gap-[3px]">
+        {Array.from({ length: 10 }, (_, i) => (
+          <span key={i} className="h-1.5 flex-1 rounded-full" style={{ background: i < value ? tone : 'rgba(20,19,15,0.08)' }} />
+        ))}
+      </div>
+      <span className="text-[12px] font-semibold text-muted">{value >= 7 ? 'Severe' : value >= 4 ? 'Moderate' : 'Mild'}</span>
+    </div>
+  );
+}
+
+function QA({ q, children }) {
+  return (
+    <div className="border-t border-[var(--hairline)] py-3">
+      <p className="m-0 text-[13px] font-semibold text-muted">{q}</p>
+      <div className="mt-1 text-sm font-semibold text-text">{children}</div>
+    </div>
+  );
+}
+
 function SectionTitle({ icon, title, aside }) {
   return (
     <div className="card-head" style={{ alignItems: 'center' }}>
@@ -145,12 +222,13 @@ export default function SessionPage() {
   const [selectedExercise, setSelectedExercise] = useState('hand_raise');
   const [targetSide, setTargetSide] = useState('both'); // left | right | both
   const [patientHistory, setPatientHistory] = useState([]);
-  const [followUpDate, setFollowUpDate] = useState('');
+  const [followUpDate, setFollowUpDate] = useState('');   // saved on the server
+  const [followUpDraft, setFollowUpDraft] = useState(''); // what the physio has picked
   const [savingFollowUp, setSavingFollowUp] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [prescribing, setPrescribing] = useState(false);
-  const [prescriptionId, setPrescriptionId] = useState(null);
+  const [prescription, setPrescription] = useState(null); // last prescription issued for this session
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [starting, setStarting] = useState(false);
@@ -260,7 +338,22 @@ export default function SessionPage() {
         setSession(s);
         lastAiSummary.current = s.aiSummary || null;
         setSoap(parseSoap(s.approvedSummary || s.aiSummary));
-        if (s.followUpDate) setFollowUpDate(s.followUpDate.split('T')[0]);
+        if (s.followUpDate) {
+          const saved = s.followUpDate.split('T')[0];
+          setFollowUpDate(saved);
+          setFollowUpDraft(saved);
+        }
+        // Existing prescription → show it, so the button reads "Prescribed" / "Prescribe again".
+        api.get(`/api/prescriptions/session/${id}`)
+          .then(rx => {
+            if (!rx?._id) return;
+            setPrescription(rx);
+            setSelectedExercise(rx.exerciseId || 'hand_raise');
+            setTargetReps(rx.targetReps ?? 10);
+            setTargetSide(rx.side || 'both');
+            setNotes(rx.notes || '');
+          })
+          .catch(() => {});
         const patientId = s.patientId?._id || s.patientId;
         if (patientId) {
           api.get(`/api/physiologist/patient-sessions/${patientId}`)
@@ -287,11 +380,13 @@ export default function SessionPage() {
     }
   }
 
-  async function saveFollowUp(date) {
-    setSavingFollowUp(true);
+  // Saves the picked follow-up date (or clears it) — only when the button is pressed.
+  async function saveFollowUp() {
+    setSavingFollowUp(true); setError(''); setSuccess('');
     try {
-      await api.patch(`/api/physiologist/sessions/${id}/followup`, { followUpDate: date });
-      setFollowUpDate(date);
+      await api.patch(`/api/physiologist/sessions/${id}/followup`, { followUpDate: followUpDraft });
+      setFollowUpDate(followUpDraft);
+      setSuccess(followUpDraft ? 'Follow-up recommendation saved.' : 'Follow-up recommendation removed.');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -305,17 +400,21 @@ export default function SessionPage() {
     try {
       const patientId = session.patientId._id || session.patientId;
       const exercise = EXERCISES.find((e) => e.id === selectedExercise);
-      const prescription = await api.post('/api/prescriptions', {
-        sessionId: id,
-        patientId,
+      const fields = {
         exerciseId: selectedExercise,
         exerciseName: exercise?.label || selectedExercise,
         targetReps,
         side: targetSide,
         notes,
-      });
-      setPrescriptionId(prescription._id);
-      setSuccess('Exercise prescribed successfully! Patient will see it in the app.');
+      };
+      // "Prescribe again" updates the existing prescription instead of creating a duplicate.
+      const saved = prescription?._id
+        ? await api.patch(`/api/prescriptions/${prescription._id}`, fields)
+        : await api.post('/api/prescriptions', { sessionId: id, patientId, ...fields });
+      setSuccess(prescription?._id
+        ? 'Prescription updated. The patient will see the changes in the app.'
+        : 'Exercise prescribed successfully! Patient will see it in the app.');
+      setPrescription(saved);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -352,6 +451,23 @@ export default function SessionPage() {
   const awaitingTranscript = session.meetingUrl && (!session.transcriptText || resumed);
   const scribeLabel = SCRIBE_STATUS_LABEL[session.recallStatus] || session.recallStatus;
   const transcript = parseTranscript(session.transcriptText);
+  const intake = parseIntake(session.complaints);
+  const redFlags = intake.safety.filter(x => /^yes$/i.test(x.a));
+  const rxChanged = !prescription
+    || prescription.exerciseId !== selectedExercise
+    || Number(prescription.targetReps) !== Number(targetReps)
+    || (prescription.side || 'both') !== targetSide
+    || (prescription.notes || '') !== notes;
+  const rxLabel = prescribing
+    ? (prescription ? 'Updating…' : 'Prescribing…')
+    : !prescription ? 'Prescribe exercise' : rxChanged ? 'Prescribe again' : 'Prescribed';
+  const followUpChanged = followUpDraft !== followUpDate;
+  const followUpLabel = savingFollowUp
+    ? 'Saving…'
+    : !followUpChanged
+      ? (followUpDate ? 'Follow-up saved' : 'Save follow-up')
+      : !followUpDraft ? 'Remove follow-up' : followUpDate ? 'Update follow-up' : 'Save follow-up';
+  const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   const startLabel = starting
     ? 'Starting…'
     : approved
@@ -390,8 +506,8 @@ export default function SessionPage() {
       {success && (
         <div className="banner rise border border-sage/25 bg-sage-tint text-sage" role="status">
           <p className="flex items-center gap-2"><CheckIcon size={18} /> {success}</p>
-          {prescriptionId && (
-            <Link href={`/results/${prescriptionId}`} className="link-copper">View exercise results →</Link>
+          {prescription?._id && (
+            <Link href={`/results/${prescription._id}`} className="link-copper">View exercise results →</Link>
           )}
         </div>
       )}
@@ -618,9 +734,9 @@ export default function SessionPage() {
 
           {/* Side column */}
           <div className="stack min-w-0">
-            {/* Patient */}
+            {/* Patient + intake answers (as asked in the app) */}
             <section className="glass-card padded rise" style={{ animationDelay: '80ms' }}>
-              <SectionTitle icon={<UserIcon size={18} />} title="Patient" />
+              <SectionTitle icon={<UserIcon size={18} />} title="Patient intake" />
               <div className="flex items-center gap-3">
                 <Avatar name={patientName} />
                 <div className="min-w-0">
@@ -628,21 +744,55 @@ export default function SessionPage() {
                   {session.patientId?.email && <p className="m-0 truncate text-[13px] text-muted">{session.patientId.email}</p>}
                 </div>
               </div>
-              {(session.complaints || session.medicalHistory) && (
-                <dl className="meta-rows mt-4">
-                  {session.complaints && (
-                    <div className="flex flex-col gap-1 border-t border-[var(--hairline)] py-3">
-                      <dt className="text-[13px] font-semibold">Complaints</dt>
-                      <dd className="text-sm" style={{ fontWeight: 500 }}>{session.complaints}</dd>
-                    </div>
-                  )}
-                  {session.medicalHistory && (
-                    <div className="flex flex-col gap-1 border-t border-[var(--hairline)] py-3">
-                      <dt className="text-[13px] font-semibold">History</dt>
-                      <dd className="text-sm" style={{ fontWeight: 500 }}>{session.medicalHistory}</dd>
-                    </div>
-                  )}
-                </dl>
+
+              {redFlags.length > 0 && (
+                <p className="mt-4 mb-0 flex items-start gap-2 rounded-xl bg-rose-tint px-3 py-2 text-[13px] font-semibold text-rose" role="alert">
+                  <AlertIcon size={18} />
+                  <span>{redFlags.length} safety red flag{redFlags.length > 1 ? 's' : ''} reported — review before treatment.</span>
+                </p>
+              )}
+
+              <div className="mt-4">
+                <QA q="What brings you in today?">
+                  {intake.concern || <span className="font-normal text-muted">No description given</span>}
+                </QA>
+                {intake.area && (
+                  <QA q="Which area needs care?">
+                    {intake.area}{intake.side ? ` · ${intake.side}` : ''}
+                    {intake.side && SIDE_QUESTION[intake.area] && (
+                      <span className="block text-[12px] font-normal text-muted">{SIDE_QUESTION[intake.area]} {intake.side}</span>
+                    )}
+                  </QA>
+                )}
+                {intake.answers.map(({ q, a, pain }) => (
+                  <QA key={q} q={q}>
+                    {a}
+                    {pain && <PainMeter value={intake.pain} />}
+                  </QA>
+                ))}
+                {intake.other.map((line, i) => (
+                  <QA key={`o${i}`} q="Additional notes">{line}</QA>
+                ))}
+                {session.medicalHistory && <QA q="Medical history">{session.medicalHistory}</QA>}
+              </div>
+
+              {intake.safety.length > 0 && (
+                <div className="mt-2 border-t border-[var(--hairline)] pt-3">
+                  <p className="form-label" style={{ marginBottom: 8 }}>Safety check</p>
+                  <ul className="m-0 flex list-none flex-col gap-2 p-0">
+                    {intake.safety.map(({ q, a }) => {
+                      const flag = /^yes$/i.test(a);
+                      return (
+                        <li key={q} className="flex items-start justify-between gap-3">
+                          <span className="text-[13px] text-text">{q}</span>
+                          <span className={`status-pill shrink-0 ${flag ? 'pill-missed' : 'pill-approved'}`}>
+                            <span className="status-dot" aria-hidden="true" />{a}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               )}
             </section>
 
@@ -722,30 +872,37 @@ export default function SessionPage() {
                 type="button"
                 className="btn-copper mt-4 w-full"
                 onClick={prescribeExercise}
-                disabled={prescribing || !approved}
+                disabled={prescribing || !approved || !rxChanged}
                 title={!approved ? 'Approve summary first' : undefined}
               >
-                {prescribing ? 'Prescribing…' : 'Prescribe exercise'}
+                {!prescribing && prescription && !rxChanged && <CheckIcon size={18} />}
+                {rxLabel}
               </button>
-              {!approved && <p className="form-hint">Approve the summary before prescribing.</p>}
+              {!approved ? (
+                <p className="form-hint">Approve the summary before prescribing.</p>
+              ) : prescription && !rxChanged ? (
+                <p className="form-hint">The patient can see this prescription in the app. Change any field to prescribe again.</p>
+              ) : prescription ? (
+                <p className="form-hint">You have unsaved changes to the prescription.</p>
+              ) : null}
             </section>
 
-            {/* Follow-up */}
+            {/* Follow-up — choices only change the draft; the button saves */}
             <section className="glass-card padded rise" style={{ animationDelay: '160ms' }}>
               <SectionTitle icon={<CalendarIcon size={18} />} title="Recommend follow-up" />
-              <div className="chip-row">
+              <div className="chip-row" role="group" aria-label="Follow-up in">
                 {FOLLOWUP_OPTIONS.map(({ label, days }) => {
                   const d = new Date();
                   d.setDate(d.getDate() + days);
                   const dateStr = d.toISOString().split('T')[0];
-                  const active = followUpDate === dateStr;
+                  const active = followUpDraft === dateStr;
                   return (
                     <button
                       key={days}
                       type="button"
                       className="chip-pick"
                       aria-pressed={active}
-                      onClick={() => saveFollowUp(active ? '' : dateStr)}
+                      onClick={() => setFollowUpDraft(active ? '' : dateStr)}
                       disabled={savingFollowUp}
                     >
                       {label}
@@ -757,14 +914,27 @@ export default function SessionPage() {
               <input
                 id="followup-date"
                 type="date"
-                value={followUpDate}
-                onChange={e => saveFollowUp(e.target.value)}
+                value={followUpDraft}
+                onChange={e => setFollowUpDraft(e.target.value)}
                 className="form-field"
               />
-              {followUpDate && (
-                <p className="form-success mt-3">
-                  Patient will be notified to book a follow-up by {new Date(followUpDate + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.
+              <button
+                type="button"
+                className="btn-copper mt-4 w-full"
+                onClick={saveFollowUp}
+                disabled={savingFollowUp || !followUpChanged}
+              >
+                {!savingFollowUp && !followUpChanged && followUpDate && <CheckIcon size={18} />}
+                {followUpLabel}
+              </button>
+              {followUpChanged ? (
+                <p className="form-hint">
+                  {followUpDraft ? `Not saved yet — the patient will be asked to book by ${fmtDate(followUpDraft)}.` : 'Not saved yet — this removes the follow-up recommendation.'}
                 </p>
+              ) : followUpDate ? (
+                <p className="form-success mt-3">Patient will be notified to book a follow-up by {fmtDate(followUpDate)}.</p>
+              ) : (
+                <p className="form-hint">Pick when the patient should come back, then save.</p>
               )}
             </section>
 

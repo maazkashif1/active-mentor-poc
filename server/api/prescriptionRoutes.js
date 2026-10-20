@@ -41,9 +41,27 @@ router.patch('/:id', verifyToken, async (req, res) => {
     if ('raiseAngleThreshold' in updates || 'minAdaptedAngle' in updates) {
       updates.currentAdaptedAngle = null;
     }
-    const prescription = await Prescription.findByIdAndUpdate(req.params.id, updates, { new: true });
+    // A physio can only edit their own prescriptions.
+    const prescription = await Prescription.findOneAndUpdate(
+      { _id: req.params.id, physiologistId: req.user.id },
+      updates,
+      { new: true },
+    );
     if (!prescription) return res.status(404).json({ message: 'Not found' });
     res.json(prescription);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Latest prescription the physio issued for a session (null if none) — lets the portal
+// show "Prescribed" / "Prescribe again" after a reload.
+router.get('/session/:sessionId', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'physiologist') return res.status(403).json({ message: 'Forbidden' });
+    const prescription = await Prescription.findOne({ sessionId: req.params.sessionId, physiologistId: req.user.id })
+      .sort({ createdAt: -1 });
+    res.json(prescription || null);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
