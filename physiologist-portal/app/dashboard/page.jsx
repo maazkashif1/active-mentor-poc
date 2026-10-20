@@ -53,6 +53,13 @@ function getNextSession(sessions) {
   return best;
 }
 
+// The booking note is "patient's words" + one "Label: value" line per intake answer;
+// the card shows only the patient's words (empty for the app's default text).
+function firstLine(note) {
+  const line = String(note || '').split('\n')[0].replace(/^\[seeded\]\s*/, '').trim();
+  return /^(Initial assessment|Appointment intake)$/i.test(line) || /^(Area|Surgery|Onset|Pain|Safety):/i.test(line) ? '' : line;
+}
+
 function formatSessionDate(slotDate) {
   const d = new Date(`${slotDate}T00:00:00`);
   const today = new Date();
@@ -147,7 +154,6 @@ export default function DashboardPage() {
           <article className="hero-card rise">
             <PlusPattern />
             <div className="hero-glow" aria-hidden="true" />
-            {nextSession ? <EcgLine className="hero-ecg" /> : null}
             <div className="hero-body">
               {loading ? (
                 <ListSkeleton rows={3} tone="dark" />
@@ -155,20 +161,29 @@ export default function DashboardPage() {
                 <ErrorState message={error} tone="dark" />
               ) : nextSession ? (
                 <>
-                  <p className="hero-kicker">Next session</p>
+                  {/* Header: label left, session status right */}
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="hero-kicker">Next session</p>
+                    <StatusPill status={nextSession.status} />
+                  </div>
                   <p className="hero-time">{nextSession.slotTime}</p>
                   <p className="hero-date">{formatSessionDate(nextSession.slotDate)}</p>
-                  <hr className="hero-divider" />
-                  <div className="hero-patient">
+                  {/* ECG in the normal flow, between the date and the divider, so it never crosses text */}
+                  <div className="mt-3 h-10 text-[#e07b3c] opacity-75" aria-hidden="true">
+                    <EcgLine className="h-full w-full" />
+                  </div>
+                  <hr className="hero-divider" style={{ marginTop: 8 }} />
+                  <div className="hero-patient" style={{ flexWrap: 'nowrap' }}>
                     <Avatar name={nextSession.patientId?.name || 'Unknown patient'} />
-                    <div>
-                      <p className="hero-name">{nextSession.patientId?.name || 'Unknown patient'}</p>
-                      {nextSession.complaints ? (
-                        <p className="hero-program">{nextSession.complaints}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="hero-name truncate">{nextSession.patientId?.name || 'Unknown patient'}</p>
+                      {firstLine(nextSession.complaints) ? (
+                        <p className="hero-program truncate" title={firstLine(nextSession.complaints)}>
+                          {firstLine(nextSession.complaints)}
+                        </p>
                       ) : null}
                     </div>
-                    <StatusPill status={nextSession.status} />
-                    <Link href={`/sessions/${nextSession._id}`} className="btn-copper">
+                    <Link href={`/sessions/${nextSession._id}`} className="btn-copper shrink-0">
                       Open session
                       <ArrowRightIcon size={16} />
                     </Link>
